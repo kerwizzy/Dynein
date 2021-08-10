@@ -1,0 +1,13 @@
+{
+  "name": "@dynein/hyperfor",
+  "version": "0.0.1",
+  "description": "",
+  "type":"module",
+  "types": "src/hyperfor.ts",
+  "main": "built/hyperfor.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": "kerwizzy",
+  "license": "MIT"
+}

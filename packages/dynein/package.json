@@ -1,0 +1,20 @@
+{
+  "name": "dynein",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "main": "built/index.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "mocha",
+    "build": "esbuild src/index.ts --outfile=built/dynein.js --format=esm --sourcemap --bundle"
+  },
+  "author": "kerwizzy",
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^16.6.0"
+  },
+  "dependencies": {
+    "dynein-state": "file:../dynein-state"
+  }
+}

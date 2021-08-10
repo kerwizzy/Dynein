@@ -1,0 +1,17 @@
+{
+  "name": "dynein-sharedports",
+  "private": true,
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "main": "built/index.js",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "kerwizzy",
+  "license": "ISC",
+  "dependencies": {
+    "dynein-state": "file:../dynein-state"
+  }
+}
