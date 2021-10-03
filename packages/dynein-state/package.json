@@ -7,6 +7,7 @@
   "types": "src/state.ts",
   "main": "built/state.js",
   "scripts": {
+    "watch": "tsc --watch",
     "test": "mocha"
   },
   "author": "kerwizzy",

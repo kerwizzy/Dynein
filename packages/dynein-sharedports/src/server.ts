@@ -216,7 +216,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 					if (await this.params.checkCanRead(client.id, msg.key, client.metadata)) {
 						if (this.specialGetters[msg.key]) {
 							this.sendToClient(client, {
-								cmd: "set",
+								cmd: "got",
 								key: msg.key,
 								value: this.serialize(this.specialGetters[msg.key](client)),
 								updateOnEqual: false
@@ -240,7 +240,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 										client.metadata
 									);
 									this.sendToClient(client, {
-										cmd: "set",
+										cmd: "got",
 										key: msg.key,
 										value: this.serialize(val),
 										updateOnEqual: false
@@ -252,7 +252,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 										err: err instanceof APIError ? err.message : "Server error"
 									});
 									this.sendToClient(client, {
-										cmd: "set",
+										cmd: "got",
 										key: msg.key,
 										value: this.serialize(undefined),
 										updateOnEqual: false
@@ -262,7 +262,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 							} else {
 								if (this.sharedPortsByKey.has(msg.key)) {
 									this.sendToClient(client, {
-										cmd: "set",
+										cmd: "got",
 										key: msg.key,
 										value: this.serialize(
 											this.sharedPortsByKey.get(msg.key)!()

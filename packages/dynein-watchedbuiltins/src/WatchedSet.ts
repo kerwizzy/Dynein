@@ -4,9 +4,13 @@ import WatchedValue from "./WatchedValue.js"
 export default class WatchedSet<T> extends WatchedValue<Set<T>> {
 	readonly value: DataPort<Set<T>>;
 
-	constructor(iterable?: T[] | Iterable<T> | null | undefined) {
+	constructor(iterable?: T[] | Iterable<T> | null | undefined | DataPort<Set<T>>) {
 		super();
-		this.value = DyneinState.data(new Set(iterable));
+		if (DyneinState.isDataPort(iterable)) {
+			this.value = iterable
+		} else {
+			this.value = DyneinState.data(new Set(iterable));
+		}
 	}
 
 	add(value: T) {

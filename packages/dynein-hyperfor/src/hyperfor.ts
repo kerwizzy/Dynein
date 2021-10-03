@@ -18,6 +18,8 @@ interface Render<T> {
 	next: Render<T> | null
 
 	ctx: DestructionContext
+
+	debugID: string
 }
 
 export default class Hyperfor<T> {
@@ -27,6 +29,7 @@ export default class Hyperfor<T> {
 	end: Node
 	render: (item: T) => void
 	boundPatch: ()=>void
+	ctx: DestructionContext | null | undefined
 
 	constructor(init: T[], render: (item: T) => void) {
 		this.render = render
@@ -38,7 +41,11 @@ export default class Hyperfor<T> {
 
 		this.boundPatch = this.patch.bind(this)
 
+		this.ctx = D.state.getContext()
+		console.log("create hyperfor set ctx = ",this.ctx)
+
 		this.set(init)
+		this.patch()
 	}
 
 	clear() {
@@ -53,40 +60,48 @@ export default class Hyperfor<T> {
 			range.setEndBefore(this.end)
 			range.deleteContents()
 		}
+		for (const render of this.toPatch) {
+			render.ctx.destroy()
+		}
+		this.toPatch = []
 	}
 
 	set(val: T[]) {
-		this.clear()
+		D.state.setContext(this.ctx, ()=>{
+			this.clear()
 
-		this.toPatch = []
-		this.startItem = null
-		D.dom.runInNodeContext(this.end.parentNode, this.end, ()=>{
-			D.state.expectStatic(()=>{
-				for (let i = 0; i<val.length; i++) {
-					const value = val[i]
-					const start = D.dom.node(document.createComment(""))
-					const ctx = new D.state.DestructionContext()
-					ctx.resume(()=>{
-						this.render(value)
-					})
-					const end = D.dom.node(document.createComment(""))
-					const render: Render<T> = {
-						state: RenderState.keep,
-						value,
-						start,
-						end,
-						prev: null,
-						next: null,
-						ctx
+			this.startItem = null
+			D.dom.runInNodeContext(this.end.parentNode, this.end, ()=>{
+				D.state.expectStatic(()=>{
+					for (let i = 0; i<val.length; i++) {
+						const value = val[i]
+
+						const debugID = "dbg_"+Math.random().toString(16).substring(2, 8)
+						const start = D.dom.node(document.createComment(debugID))
+						const ctx = new D.state.DestructionContext()
+						ctx.resume(()=>{
+							this.render(value)
+						})
+						const end = D.dom.node(document.createComment(debugID))
+						const render: Render<T> = {
+							state: RenderState.keep,
+							value,
+							start,
+							end,
+							prev: null,
+							next: null,
+							ctx,
+							debugID: debugID
+						}
+						if (i === 0) {
+							this.startItem = render
+						} else {
+							render.prev = this.toPatch[i-1]
+							render.prev.next = render
+						}
+						this.toPatch.push(render)
 					}
-					if (i === 0) {
-						this.startItem = render
-					} else {
-						render.prev = this.toPatch[i-1]
-						render.prev.next = render
-					}
-					this.toPatch.push(render)
-				}
+				})
 			})
 		})
 	}
@@ -100,45 +115,50 @@ export default class Hyperfor<T> {
 	}
 
 	spliceArr(start: number, remove: number, insert: T[]) {
-		const values = []
-		for (let i = start; i<start+remove; i++) {
-			values.push(this.toPatch[i].value)
-			this.toPatch[i].state = RenderState.remove
-		}
-		const afterIndex = start+remove
-		let prev = afterIndex >= 1 ? this.toPatch[afterIndex-1] : null
-
-		const toInsert: Render<T>[] = []
-
-		for (let j = 0; j<insert.length; j++) {
-			const value = insert[j]
-			const render: Render<T> = {
-				state: RenderState.add,
-				value,
-				start: null,
-				end: null,
-				prev: prev,
-				next: null,
-				ctx: new D.state.DestructionContext()
+		const values: T[] = []
+		D.state.setContext(this.ctx, ()=>{
+			for (let i = start; i<start+remove; i++) {
+				values.push(this.toPatch[i].value)
+				this.toPatch[i].state = RenderState.remove
 			}
-			if (prev === null) {
-				this.startItem = render
-			} else {
-				prev.next = render
-			}
-			prev = render
-			toInsert.push(render)
-		}
+			const afterIndex = start+remove
+			let prev = afterIndex >= 1 ? this.toPatch[afterIndex-1] : null
 
-		if (afterIndex < this.toPatch.length) {
-			const afterRender = this.toPatch[afterIndex]
-			if (prev) {
-				prev.next = afterRender
-				afterRender.prev = prev
-			}
-		}
+			const toInsert: Render<T>[] = []
 
-		this.toPatch.splice(start, remove, ...toInsert)
+			for (let j = 0; j<insert.length; j++) {
+				const value = insert[j]
+
+				const debugID = "dbg_"+Math.random().toString(16).substring(2, 8)
+				const render: Render<T> = {
+					state: RenderState.add,
+					value,
+					start: null,
+					end: null,
+					prev: prev,
+					next: null,
+					ctx: new D.state.DestructionContext(),
+					debugID
+				}
+				if (prev === null) {
+					this.startItem = render
+				} else {
+					prev.next = render
+				}
+				prev = render
+				toInsert.push(render)
+			}
+
+			if (afterIndex < this.toPatch.length) {
+				const afterRender = this.toPatch[afterIndex]
+				if (prev) {
+					prev.next = afterRender
+					afterRender.prev = prev
+				}
+			}
+
+			this.toPatch.splice(start, remove, ...toInsert)
+		})
 		return values
 	}
 
@@ -163,12 +183,12 @@ export default class Hyperfor<T> {
 			while (item) {
 				if (item.state === RenderState.add) {
 					D.dom.runInNodeContext(prevNode.parentNode, prevNode.nextSibling, ()=>{
-						item!.start = D.dom.node(document.createComment(""))
+						item!.start = D.dom.node(document.createComment(item!.debugID))
 						item!.ctx.reset()
 						item!.ctx.resume(()=>{
 							this.render(item!.value)
 						})
-						item!.end = D.dom.node(document.createComment(""))
+						item!.end = D.dom.node(document.createComment(item!.debugID))
 					})
 
 					prevNode = item.end!
@@ -180,8 +200,11 @@ export default class Hyperfor<T> {
 					range.setStartBefore(item.start!)
 					range.setEndAfter(item.end!)
 					range.deleteContents()
+
 					if (item.prev) {
 						item.prev.next = item.next
+					} else {
+						this.startItem = item.next
 					}
 					if (item.next) {
 						item.next.prev = item.prev

@@ -43,9 +43,9 @@ export type SerializedCustomValue = {
 };
 
 export type SerializedDate = {
-	type: "date",
-	value: number
-}
+	type: "date";
+	value: number;
+};
 
 export type SerializedArray<T> = Serialize<T>[];
 
@@ -98,6 +98,13 @@ export type GetMessage = {
 	updateOnEqual: boolean;
 };
 
+export type GotMessage = {
+	cmd: "got";
+	key: string;
+	value: SerializedValue;
+	updateOnEqual: boolean;
+};
+
 export type SetMessage = {
 	cmd: "set";
 	key: string;
@@ -146,14 +153,15 @@ export type ClientToServerMessage =
 	| SetMessage
 	| UpdateMessage
 	| UnsubscribeMessage
-	| RPCMessage;
+	| RPCMessage
 export type ServerToClientMessage =
 	| SetMessage
+	| GotMessage
 	| UpdateMessage
 	| ErrorMessage
 	| RPCResponseMessage
-	| RPCErrorMessage;
-export type ServerOrClientMessage = SetMessage | UpdateMessage;
+	| RPCErrorMessage
+export type ServerOrClientMessage = SetMessage | GotMessage | UpdateMessage;
 
 const sharedPortSymbol = Symbol("isSharedPort");
 const localPortSymbol = Symbol("setLocal");
@@ -164,35 +172,27 @@ export interface SharedPort<T> extends DataPort<T> {
 	[keySymbol]: string;
 	[localPortSymbol]: (val: T) => void;
 	[sharedPortSymbol]: true;
-	[updateFromRemoteSymbol]: (from: string, val: T) => void;
+	[updateFromRemoteSymbol]: (from: string, val: T, isSetCmd: boolean) => void;
 	readonly sharedPortUpdateOnEqual: boolean;
 }
 
-const test: DataPort<boolean> = 0 as unknown as SharedPort<boolean>;
-
-export function throttleDebounce(time: number, fn: () => void): () => void {
-	let lastTry = 0;
+export function throttleDebounce(time: number, fn: () => void, throttle: boolean=true): () => void {
 	let lastCall = 0;
-	let debounceOK = true;
+	let seq = 0
 	return () => {
-		if (lastCall + time < Date.now()) {
-			debounceOK = true;
-			fn();
-			lastCall = Date.now(); //init
+		seq++
+		const ownSeq = seq
+		if (throttle && lastCall + time < Date.now()) {
+			fn(); //throttle
+			lastCall = Date.now();
 		} else {
 			setTimeout(() => {
-				if (lastCall + time < Date.now()) {
-					debounceOK = true;
-					fn();
+				if (seq === ownSeq) { //no tries since try that triggered this timeout
+					fn(); //debounce
 					lastCall = Date.now();
-				} else if (lastTry + time < Date.now() && debounceOK) {
-					fn();
-					lastCall = Date.now();
-					debounceOK = false;
 				}
 			}, time);
 		}
-		lastTry = Date.now();
 	};
 }
 
@@ -218,6 +218,7 @@ export abstract class SharedStateEndpoint {
 		switch (msg.cmd) {
 			case "set":
 			case "update":
+			case "got":
 				const currentPort = this.getPortByKey(msg.key);
 				if (!currentPort) {
 					console.warn("Got `set` to unknown port");
@@ -225,9 +226,9 @@ export abstract class SharedStateEndpoint {
 				}
 
 				DyneinState.batch(() => {
-					if (msg.cmd === "set") {
+					if (msg.cmd === "set" || msg.cmd === "got") {
 						const deserialized = this.deserialize(msg.value);
-						currentPort[updateFromRemoteSymbol](from, deserialized);
+						currentPort[updateFromRemoteSymbol](from, deserialized, msg.cmd === "set");
 					} else if (msg.cmd === "update") {
 						const target = currentPort.sample();
 						const args = this.deserialize(msg.args);
@@ -279,9 +280,9 @@ export abstract class SharedStateEndpoint {
 			return value as Serialize<Primitive> as any;
 		} else if (value instanceof Date) {
 			return {
-				type:"date",
+				type: "date",
 				value: value.getTime()
-			} as Serialize<Date> as any
+			} as Serialize<Date> as any;
 		} else if (Array.isArray(value)) {
 			return value.map((v) => this.serialize(v)) as Serialize<any[]> as any;
 		} else if (
@@ -351,7 +352,7 @@ export abstract class SharedStateEndpoint {
 		} else if (Array.isArray(value)) {
 			return (value as SerializedArray<any>).map((v) => this.deserialize(v));
 		} else if (value.type === "date") {
-			return new Date(value.value)
+			return new Date(value.value);
 		} else if (value.type === "map") {
 			const out = new Map();
 			for (let [k, v] of (value as SerializedMap<any, any>).entries) {
@@ -393,18 +394,28 @@ export abstract class SharedStateEndpoint {
 	protected abstract getPortByKey(key: string): SharedPort<any> | undefined;
 	protected abstract setPortByKey(key: string, value: SharedPort<any>): void;
 
-	_makeOrGetPort<T>(key: string, init: T, updateOnEqual: boolean): { cached: boolean, port: SharedPort<T> } {
+	_makeOrGetPort<T>(
+		key: string,
+		init: T,
+		updateOnEqual: boolean
+	): { cached: boolean; port: SharedPort<T> } {
 		const currentPort = this.getPortByKey(key);
 		if (currentPort) {
-			return {cached: true, port: currentPort }
+			return { cached: true, port: currentPort };
 		}
 
 		let value = DyneinState.datavalue(init, updateOnEqual);
+
 		let updateRemoteUndebounced = () => {
 			const toSend = value.sample() as any;
 
 			this.broadcastUpdate(
-				{ cmd: "set", key, value: this.serialize(toSend), updateOnEqual },
+				{
+					cmd: "set",
+					key,
+					value: this.serialize(toSend),
+					updateOnEqual,
+				},
 				lastUpdateFrom
 			);
 		};
@@ -414,25 +425,30 @@ export abstract class SharedStateEndpoint {
 				: updateRemoteUndebounced;
 
 		let lastUpdateFrom: string | undefined = undefined;
+		let hasBeenSet = false // only true when has been updated using a `set` not merely a `got`
 
 		const port = DyneinState.makePort(
 			() => value(),
 			(newVal) => {
 				value(newVal);
 
+				hasBeenSet = true
 				lastUpdateFrom = undefined;
 				updateRemote();
 			}
 		) as SharedPort<T>;
 
 		//@ts-ignore
-		value.__sharedPort = port // make garbage collection of `value` depend on GC of `port`.
+		value.__sharedPort = port; // make garbage collection of `value` depend on GC of `port`.
 
-		port[updateFromRemoteSymbol] = (from, newVal) => {
-			synced(true);
-			lastUpdateFrom = from;
-			value(newVal);
-			updateRemote();
+		port[updateFromRemoteSymbol] = (from, newVal, isSetCmd) => {
+			if (!hasBeenSet || isSetCmd) {
+				hasBeenSet ||= isSetCmd
+				synced(true);
+				lastUpdateFrom = from;
+				value(newVal);
+				updateRemote()
+			}
 		};
 
 		port[keySymbol] = key;
@@ -451,7 +467,7 @@ export abstract class SharedStateEndpoint {
 
 		this.setPortByKey(key, port);
 
-		return { cached: false, port }
+		return { cached: false, port };
 	}
 
 	port<T extends Serializable>(

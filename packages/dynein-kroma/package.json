@@ -1,10 +1,10 @@
 {
-  "name": "@dynein/hyperfor",
+  "name": "@dynein/kroma",
   "version": "0.0.1",
   "description": "",
   "type":"module",
-  "types": "src/hyperfor.ts",
-  "main": "built/hyperfor.js",
+  "types": "src/kroma.ts",
+  "main": "built/kroma.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha"

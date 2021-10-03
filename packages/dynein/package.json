@@ -6,6 +6,7 @@
   "main": "built/index.js",
   "types": "src/index.ts",
   "scripts": {
+    "watch": "tsc --watch",
     "test": "mocha",
     "build": "esbuild src/index.ts --outfile=built/dynein.js --format=esm --sourcemap --bundle"
   },

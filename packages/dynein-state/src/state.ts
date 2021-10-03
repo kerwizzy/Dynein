@@ -80,7 +80,7 @@ let currentContext:
 
 function addToContext(child: Destructable) {
 	if (currentContext === undefined) {
-		console.warn("Unanchored destructable");
+		console.trace("Unanchored destructable");
 	}
 	if (currentContext) {
 		currentContext.addChild(child);
@@ -244,6 +244,7 @@ interface Console {
 	error(...data: any[]): void;
 	log(...data: any[]): void;
 	warn(...data: any[]): void;
+	trace(...data: any[]): void;
 }
 
 declare var console: Console;

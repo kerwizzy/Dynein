@@ -13,7 +13,7 @@ export type AttrsAndEventsMap<TagMap extends Record<string, any>, ElName extends
 	string,
 	Primitive | ((...args: any[]) => any)
 > &
-	Partial<EventsMap<TagMap, ElName>> | {style?: any};
+	Partial<EventsMap<TagMap, ElName>> | {style?: any, class?: any};
 
 const updateEventTable: Record<string, string> = {
 	//map of attribute:onchangeEventName
@@ -264,7 +264,6 @@ function createAndInsertElement<
 				}
 				DyneinState.watch(() => {
 					const rawVal =  val() ?? ""
-					//@ts-ignore
 					setAttrOrProp(el, attributeName, rawVal);
 				});
 			} else {
@@ -282,6 +281,17 @@ function createAndInsertElement<
 			//console.log(`</${tagName}>`)
 		} else {
 			el.appendChild(document.createTextNode(stringifyForInner(inner)));
+		}
+	}
+
+	//special case to init selects properly. has to be done after options list added
+	if (namespace === "xhtml" && tagName === "select" && attrs && "value" in attrs) {
+		const val = attrs.value
+		if (typeof val === "function") {
+			const rawVal = DyneinState.sample(val) ?? ""
+			setAttrOrProp(el, "value", rawVal);
+		} else {
+			setAttrOrProp(el, "value", (val as any) ?? "")
 		}
 	}
 

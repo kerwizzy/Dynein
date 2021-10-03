@@ -4,9 +4,13 @@ import WatchedValue from "./WatchedValue.js"
 export default class WatchedArray<T> extends WatchedValue<T[]> {
 	readonly value: DataPort<T[]>;
 
-	constructor(init?: T[]) {
+	constructor(init?: DataPort<T[]> | T[]) {
 		super();
-		this.value = DyneinState.data(init ?? []);
+		if (DyneinState.isDataPort(init)) {
+			this.value = init
+		} else {
+			this.value = DyneinState.data(init ?? []);
+		}
 	}
 
 	includes(searchElement: T, fromIndex?: number | undefined): boolean {

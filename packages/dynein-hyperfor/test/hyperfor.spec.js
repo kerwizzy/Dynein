@@ -3,7 +3,7 @@ import { default as D } from "dynein"
 
 function mount(inner) {
 	const test = document.createElement("div")
-	D.dom.mountAt(test, inner)
+	D.dom.mount(test, inner)
 	return {body: test}
 }
 
@@ -19,7 +19,7 @@ describe("hyperfor", ()=>{
 			const document = mount(()=>{
 				D.dom.elements.div()
 			})
-			assert.strictEqual(document.body.innerHTML, "<div></div>")
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "<div></div>")
 		})
 		it("doesn't do anything with no calls", ()=>{
 			// This test is here to check that beforeEach resets stuff properly
@@ -53,5 +53,18 @@ describe("hyperfor", ()=>{
 			h4.patch()
 		})
 		assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "1ab4")
+	})
+
+	it("handles .startItem changing", ()=>{
+		const document = mount(()=>{
+			const h4 = new Hyperfor([1,2,3,4], (item) => {
+				D.dom.text(item)
+			})
+			h4.splice(0,1)
+			h4.patch()
+			h4.splice(2,1)
+			h4.patch()
+		})
+		assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "23")
 	})
 })

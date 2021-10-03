@@ -7,5 +7,8 @@
   "types": "src/index.ts",
   "main": "built/index.js",
   "author": "kerwizzy",
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "watch": "tsc --watch"
+  }
 }
