@@ -206,7 +206,8 @@ function stringifyForInner(val: Primitive): string {
 	return val?.toString() ?? "";
 }
 
-type Inner<T> = ((parent: T) => void) | Primitive;
+// TODO: is (void | undefined) what we want here? It seems to help force you to not have return values, since that will almost always be a mistake, but it doesn't force you to have return undefined.
+type Inner<T> = ((parent: T) => (void | undefined)) | Primitive;
 function createAndInsertElement<
 	Namespace extends ElementNamespace,
 	TagName extends string & keyof ElementTagNameMapForNamespace[Namespace]

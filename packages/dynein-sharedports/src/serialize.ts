@@ -169,6 +169,7 @@ const keySymbol = Symbol("sharedPortKeySymbol");
 const updateFromRemoteSymbol = Symbol("updateSymbol");
 export interface SharedPort<T> extends DataPort<T> {
 	readonly synced: () => boolean;
+	readonly syncedPromise: Promise<void>
 	[keySymbol]: string;
 	[localPortSymbol]: (val: T) => void;
 	[sharedPortSymbol]: true;
@@ -441,10 +442,18 @@ export abstract class SharedStateEndpoint {
 		//@ts-ignore
 		value.__sharedPort = port; // make garbage collection of `value` depend on GC of `port`.
 
+		let onSynced: ()=>void
+		const syncedPromise = new Promise<void>((resolve) => {
+			onSynced = ()=>{
+				synced(true);
+				resolve()
+			}
+		})
+
 		port[updateFromRemoteSymbol] = (from, newVal, isSetCmd) => {
 			if (!hasBeenSet || isSetCmd) {
 				hasBeenSet ||= isSetCmd
-				synced(true);
+				onSynced()
 				lastUpdateFrom = from;
 				value(newVal);
 				updateRemote()
@@ -464,6 +473,9 @@ export abstract class SharedStateEndpoint {
 		port.synced = () => {
 			return synced();
 		};
+
+		//@ts-ignore
+		port.syncedPromise = syncedPromise
 
 		this.setPortByKey(key, port);
 
