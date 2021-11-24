@@ -383,7 +383,9 @@ const DyneinDOM = {
 			range.deleteContents();
 		});
 
-		runInNodeContext(el, endNode, inner);
+		DyneinState.expectStatic(()=>{
+			runInNodeContext(el, endNode, inner);
+		})
 	},
 	mountBody(inner: () => void) {
 		if (document.body) {
