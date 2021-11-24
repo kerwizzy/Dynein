@@ -1,5 +1,6 @@
 import D from "dynein"
 import Color from "./Color.js"
+import Gradient from "./Gradient.js"
 
 let idCounter = 0
 function id() {
@@ -116,4 +117,4 @@ function css(strs: TemplateStringsArray, ...values: any): void {
 	})
 }
 
-export { K, css, Color }
+export { K, css, Color, Gradient }
