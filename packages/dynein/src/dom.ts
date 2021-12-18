@@ -19,7 +19,8 @@ const updateEventTable: Record<string, string> = {
 	//map of attribute:onchangeEventName
 	innerHTML: "input", //for contentEditable:true
 	value: "input",
-	checked: "input"
+	checked: "input",
+	selectedIndex: "input" //<select>
 };
 
 abstract class VRange {
@@ -156,14 +157,24 @@ function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
 		name = "className"
 	}
 	if (name === "style" && typeof val === "object") {
-		val = Object.entries(val).map(([k,v]) => `${k}:${v}`).join(";")
-	}
-
-	if (el.namespaceURI === "http://www.w3.org/2000/svg") {
-		el.setAttribute(name, val)
+		for (const styleKey in val) {
+			const styleVal = val[styleKey]
+			if (typeof styleVal === "function") {
+				DyneinState.watch(() => {
+					const rawVal = styleVal() ?? ""
+					el.style.setProperty(styleKey, rawVal)
+				});
+			} else {
+				el.style.setProperty(styleKey, styleVal)
+			}
+		}
 	} else {
-		//@ts-ignore
-		el[name] = val
+		if (el.namespaceURI === "http://www.w3.org/2000/svg") {
+			el.setAttribute(name, val)
+		} else {
+			//@ts-ignore
+			el[name] = val
+		}
 	}
 }
 
@@ -240,9 +251,11 @@ function createAndInsertElement<
 				el.addEventListener(attributeName.substring(2).toLowerCase(), function () {
 					ctx.reset();
 					ctx.resume(() => {
-						DyneinState.ignore(()=>{
-							//@ts-ignore
-							val.apply(this, arguments);
+						DyneinState.batch(()=>{
+							DyneinState.ignore(()=>{
+								//@ts-ignore
+								val.apply(this, arguments);
+							})
 						})
 					});
 				});
