@@ -21,5 +21,5 @@ const D = {
 type DyneinType = typeof D;
 
 export type { Plugin };
-export type { DataPort, DestructionContext } from "dynein-state";
+export type { DataSignal, DestructionContext } from "dynein-state";
 export default D;

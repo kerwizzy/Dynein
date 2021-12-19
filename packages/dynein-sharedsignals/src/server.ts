@@ -5,7 +5,7 @@ import {
 	ClientToServerMessage,
 	ServerToClientMessage,
 	Serializable,
-	SharedPort
+	SharedSignal
 } from "./serialize.js";
 
 interface Client<T> {
@@ -75,7 +75,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 	private subscriptions: Map<string, Set<Client<T>>> = new Map();
 	private specialGetters: Record<string, (client: Client<T>) => any>;
 	protected debounceInterval = 0;
-	sharedPortsByKey: Map<string, SharedPort<any>> = new Map();
+	sharedSignalsByKey: Map<string, SharedSignal<any>> = new Map();
 	private params: ServerParams<T>;
 
 	uuid() {
@@ -192,8 +192,8 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 								console.log("got err: ", err);
 							}
 						} else {
-							if (msg.cmd === "set" && !this.getPortByKey(msg.key)) {
-								this._makeOrGetPort(
+							if (msg.cmd === "set" && !this.getSignalByKey(msg.key)) {
+								this._makeOrGetSignal(
 									msg.key,
 									this.deserialize(msg.value),
 									msg.updateOnEqual
@@ -260,15 +260,15 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 									console.log("got err: ", err);
 								}
 							} else {
-								if (this.sharedPortsByKey.has(msg.key)) {
+								if (this.sharedSignalsByKey.has(msg.key)) {
 									this.sendToClient(client, {
 										cmd: "got",
 										key: msg.key,
 										value: this.serialize(
-											this.sharedPortsByKey.get(msg.key)!()
+											this.sharedSignalsByKey.get(msg.key)!()
 										),
-										updateOnEqual: this.sharedPortsByKey.get(msg.key)!
-											.sharedPortUpdateOnEqual
+										updateOnEqual: this.sharedSignalsByKey.get(msg.key)!
+											.sharedSignalUpdateOnEqual
 									});
 								} else {
 									this.serverHandleMessage(client, {
@@ -347,7 +347,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 					if (keyType === KeyType.uuid) {
 						if (subscriptionSet.size === 0) {
 							//TODO: maybe there could be a race condition here if one last client leaves and then another now client requests at about the same time?
-							this.sharedPortsByKey.delete(msg.key);
+							this.sharedSignalsByKey.delete(msg.key);
 							this.subscriptions.delete(msg.key);
 						}
 					}
@@ -382,10 +382,10 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 		}
 	}
 
-	protected getPortByKey(key: string): SharedPort<any> | undefined {
-		return this.sharedPortsByKey.get(key);
+	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
+		return this.sharedSignalsByKey.get(key);
 	}
-	protected setPortByKey(key: string, port: SharedPort<any>) {
-		this.sharedPortsByKey.set(key, port);
+	protected setSignalByKey(key: string, signal: SharedSignal<any>) {
+		this.sharedSignalsByKey.set(key, signal);
 	}
 }

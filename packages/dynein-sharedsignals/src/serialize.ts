@@ -1,4 +1,4 @@
-import { default as DyneinState, DataPort } from "dynein-state";
+import { default as DyneinState, DataSignal } from "dynein-state";
 
 type Primitive = null | undefined | boolean | string | number | bigint;
 
@@ -16,8 +16,8 @@ export type SerializedRecord<V> = {
 	obj: Record<string, Serialize<V>>;
 };
 
-export type SerializedSharedPort<T> = {
-	type: "sharedPort";
+export type SerializedSharedSignal<T> = {
+	type: "sharedSignal";
 	key: string;
 	init: Serialize<T>;
 	updateOnEqual: boolean;
@@ -63,8 +63,8 @@ export type Serialize<T> = T extends Primitive
 	? SerializedSet<T>
 	: T extends StringRecord<infer V>
 	? SerializedRecord<V>
-	: T extends SharedPort<infer V>
-	? SerializedSharedPort<V>
+	: T extends SharedSignal<infer V>
+	? SerializedSharedSignal<V>
 	: T extends SharedArray<infer V>
 	? SerializedSharedArray
 	: T extends SharedSet<infer V>
@@ -80,15 +80,15 @@ export type Serializable =
 	| Serializable[]
 	| Set<Serializable>
 	| Map<Serializable, Serializable>
-	| SharedPort<any>
+	| SharedSignal<any>
 	| SharedArray<Serializable>
 	| SharedSet<UniqueSerializable>
 	| SharedMap<UniqueSerializable, Serializable>;
-export type UniqueSerializable = Primitive | SharedPort<Serializable>;
+export type UniqueSerializable = Primitive | SharedSignal<Serializable>;
 export type SerializedValue = Serialize<Serializable> | SerializedCustomValue;
 
-export function isSharedPort(thing: any): thing is SharedPort<any> {
-	return thing && thing[sharedPortSymbol] === true;
+export function isSharedSignal(thing: any): thing is SharedSignal<any> {
+	return thing && thing[sharedSignalSymbol] === true;
 }
 
 export type GetMessage = {
@@ -163,18 +163,18 @@ export type ServerToClientMessage =
 	| RPCErrorMessage
 export type ServerOrClientMessage = SetMessage | GotMessage | UpdateMessage;
 
-const sharedPortSymbol = Symbol("isSharedPort");
-const localPortSymbol = Symbol("setLocal");
-const keySymbol = Symbol("sharedPortKeySymbol");
+const sharedSignalSymbol = Symbol("isSharedSignal");
+const localSignalSymbol = Symbol("setLocal");
+const keySymbol = Symbol("sharedSignalKeySymbol");
 const updateFromRemoteSymbol = Symbol("updateSymbol");
-export interface SharedPort<T> extends DataPort<T> {
+export interface SharedSignal<T> extends DataSignal<T> {
 	readonly synced: () => boolean;
 	readonly syncedPromise: Promise<void>
 	[keySymbol]: string;
-	[localPortSymbol]: (val: T) => void;
-	[sharedPortSymbol]: true;
+	[localSignalSymbol]: (val: T) => void;
+	[sharedSignalSymbol]: true;
 	[updateFromRemoteSymbol]: (from: string, val: T, isSetCmd: boolean) => void;
-	readonly sharedPortUpdateOnEqual: boolean;
+	readonly sharedSignalUpdateOnEqual: boolean;
 }
 
 export function throttleDebounce(time: number, fn: () => void, throttle: boolean=true): () => void {
@@ -220,18 +220,18 @@ export abstract class SharedStateEndpoint {
 			case "set":
 			case "update":
 			case "got":
-				const currentPort = this.getPortByKey(msg.key);
-				if (!currentPort) {
-					console.warn("Got `set` to unknown port");
+				const currentSignal = this.getSignalByKey(msg.key);
+				if (!currentSignal) {
+					console.warn("Got `set` to unknown signal");
 					return;
 				}
 
 				DyneinState.batch(() => {
 					if (msg.cmd === "set" || msg.cmd === "got") {
 						const deserialized = this.deserialize(msg.value);
-						currentPort[updateFromRemoteSymbol](from, deserialized, msg.cmd === "set");
+						currentSignal[updateFromRemoteSymbol](from, deserialized, msg.cmd === "set");
 					} else if (msg.cmd === "update") {
-						const target = currentPort.sample();
+						const target = currentSignal.sample();
 						const args = this.deserialize(msg.args);
 						if (msg.method === "splice") {
 							target.splice(...args);
@@ -244,7 +244,7 @@ export abstract class SharedStateEndpoint {
 						} else {
 							throw new Error("Unrecognized method");
 						}
-						currentPort[localPortSymbol](target);
+						currentSignal[localSignalSymbol](target);
 						this.broadcastUpdate(msg, from); //echo same update message to other clients if on server, do nothing if on client because of blockSendTo
 					} else {
 						throw new Error("Unexpected state");
@@ -310,13 +310,13 @@ export abstract class SharedStateEndpoint {
 					this.serialize(v)
 				])
 			} as Serialize<Map<any, any>> as any;
-		} else if (isSharedPort(value)) {
+		} else if (isSharedSignal(value)) {
 			return {
-				type: "sharedPort",
+				type: "sharedSignal",
 				key: value[keySymbol],
 				init: value.sample(),
-				updateOnEqual: value.sharedPortUpdateOnEqual
-			} as Serialize<SharedPort<any>> as any;
+				updateOnEqual: value.sharedSignalUpdateOnEqual
+			} as Serialize<SharedSignal<any>> as any;
 		} else if (value instanceof SharedSet) {
 			return { type: "sharedSet", key: value.value[keySymbol] } as Serialize<
 				SharedSet<any>
@@ -373,8 +373,8 @@ export abstract class SharedStateEndpoint {
 				out[key] = this.deserialize(value.obj[key]);
 			}
 			return out;
-		} else if (value.type === "sharedPort") {
-			return this._makeOrGetPort(value.key, value.init, value.updateOnEqual);
+		} else if (value.type === "sharedSignal") {
+			return this._makeOrGetSignal(value.key, value.init, value.updateOnEqual);
 		} else if (value.type === "sharedArr") {
 			return this.sharedArray(value.key);
 		} else if (value.type === "sharedSet") {
@@ -392,17 +392,17 @@ export abstract class SharedStateEndpoint {
 		}
 	}
 
-	protected abstract getPortByKey(key: string): SharedPort<any> | undefined;
-	protected abstract setPortByKey(key: string, value: SharedPort<any>): void;
+	protected abstract getSignalByKey(key: string): SharedSignal<any> | undefined;
+	protected abstract setSignalByKey(key: string, value: SharedSignal<any>): void;
 
-	_makeOrGetPort<T>(
+	_makeOrGetSignal<T>(
 		key: string,
 		init: T,
 		updateOnEqual: boolean
-	): { cached: boolean; port: SharedPort<T> } {
-		const currentPort = this.getPortByKey(key);
-		if (currentPort) {
-			return { cached: true, port: currentPort };
+	): { cached: boolean; signal: SharedSignal<T> } {
+		const currentSignal = this.getSignalByKey(key);
+		if (currentSignal) {
+			return { cached: true, signal: currentSignal };
 		}
 
 		let value = DyneinState.datavalue(init, updateOnEqual);
@@ -428,7 +428,7 @@ export abstract class SharedStateEndpoint {
 		let lastUpdateFrom: string | undefined = undefined;
 		let hasBeenSet = false // only true when has been updated using a `set` not merely a `got`
 
-		const port = DyneinState.makePort(
+		const signal = DyneinState.makeSignal(
 			() => value(),
 			(newVal) => {
 				value(newVal);
@@ -437,10 +437,10 @@ export abstract class SharedStateEndpoint {
 				lastUpdateFrom = undefined;
 				updateRemote();
 			}
-		) as SharedPort<T>;
+		) as SharedSignal<T>;
 
 		//@ts-ignore
-		value.__sharedPort = port; // make garbage collection of `value` depend on GC of `port`.
+		value.__sharedSignal = signal; // make garbage collection of `value` depend on GC of `signal`.
 
 		let onSynced: ()=>void
 		const syncedPromise = new Promise<void>((resolve) => {
@@ -450,7 +450,7 @@ export abstract class SharedStateEndpoint {
 			}
 		})
 
-		port[updateFromRemoteSymbol] = (from, newVal, isSetCmd) => {
+		signal[updateFromRemoteSymbol] = (from, newVal, isSetCmd) => {
 			if (!hasBeenSet || isSetCmd) {
 				hasBeenSet ||= isSetCmd
 				onSynced()
@@ -460,40 +460,40 @@ export abstract class SharedStateEndpoint {
 			}
 		};
 
-		port[keySymbol] = key;
+		signal[keySymbol] = key;
 
-		port[localPortSymbol] = value;
-		port[sharedPortSymbol] = true;
+		signal[localSignalSymbol] = value;
+		signal[sharedSignalSymbol] = true;
 
 		//@ts-ignore
-		port.sharedPortUpdateOnEqual = updateOnEqual;
+		signal.sharedSignalUpdateOnEqual = updateOnEqual;
 
 		const synced = DyneinState.value(false);
 		//@ts-ignore
-		port.synced = () => {
+		signal.synced = () => {
 			return synced();
 		};
 
 		//@ts-ignore
-		port.syncedPromise = syncedPromise
+		signal.syncedPromise = syncedPromise
 
-		this.setPortByKey(key, port);
+		this.setSignalByKey(key, signal);
 
-		return { cached: false, port };
+		return { cached: false, signal };
 	}
 
-	port<T extends Serializable>(
+	signal<T extends Serializable>(
 		init: T,
 		key?: string,
 		updateOnEqual: boolean = false
-	): SharedPort<T> {
+	): SharedSignal<T> {
 		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return this._makeOrGetPort(key, init, updateOnEqual).port;
+		return this._makeOrGetSignal(key, init, updateOnEqual).signal;
 	}
 
-	customPort<T>(init: T, key?: string, updateOnEqual: boolean = false): SharedPort<T> {
+	customSignal<T>(init: T, key?: string, updateOnEqual: boolean = false): SharedSignal<T> {
 		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return this._makeOrGetPort(key, init, updateOnEqual).port;
+		return this._makeOrGetSignal(key, init, updateOnEqual).signal;
 	}
 
 	sharedArray<T extends Serializable>(init: T[] = [], key?: string): SharedArray<T> {
@@ -517,7 +517,7 @@ export abstract class SharedStateEndpoint {
 
 class SharedArray<T extends Serializable> {
 	private readonly parent: SharedStateEndpoint;
-	readonly value: SharedPort<T[]>;
+	readonly value: SharedSignal<T[]>;
 
 	private get v() {
 		return this.value.sample();
@@ -525,7 +525,7 @@ class SharedArray<T extends Serializable> {
 
 	constructor(parent: SharedStateEndpoint, key: string, init: T[]) {
 		this.parent = parent;
-		this.value = this.parent._makeOrGetPort(key, init, true).port;
+		this.value = this.parent._makeOrGetSignal(key, init, true).signal;
 	}
 
 	includes(searchElement: T, fromIndex?: number | undefined): boolean {
@@ -543,7 +543,7 @@ class SharedArray<T extends Serializable> {
 
 	splice(start: number, deleteCount: number, ...items: T[]) {
 		const out = this.v.splice(start, deleteCount, ...items);
-		this.value[localPortSymbol](this.v);
+		this.value[localSignalSymbol](this.v);
 
 		//@ts-ignore
 		this.parent.broadcastUpdate({
@@ -576,11 +576,11 @@ class SharedArray<T extends Serializable> {
 
 class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 	private readonly parent: SharedStateEndpoint;
-	readonly value: SharedPort<Map<K, V>>;
+	readonly value: SharedSignal<Map<K, V>>;
 
 	constructor(parent: SharedStateEndpoint, key: string, init: [K, V][] = []) {
 		this.parent = parent;
-		this.value = this.parent._makeOrGetPort(key, new Map(init), true).port;
+		this.value = this.parent._makeOrGetSignal(key, new Map(init), true).signal;
 	}
 
 	private get v() {
@@ -593,7 +593,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 
 	set(key: K, value: V) {
 		this.value.sample().set(key, value);
-		this.value[localPortSymbol](this.v);
+		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
@@ -610,7 +610,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 
 	delete(key: K) {
 		this.value.sample().delete(key);
-		this.value[localPortSymbol](this.v);
+		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
@@ -631,11 +631,11 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 
 class SharedSet<T extends UniqueSerializable> {
 	private readonly parent: SharedStateEndpoint;
-	readonly value: SharedPort<Set<T>>;
+	readonly value: SharedSignal<Set<T>>;
 
 	constructor(parent: SharedStateEndpoint, key: string, init: T[] = []) {
 		this.parent = parent;
-		this.value = this.parent._makeOrGetPort(key, new Set(init), true).port;
+		this.value = this.parent._makeOrGetSignal(key, new Set(init), true).signal;
 	}
 
 	private get v() {
@@ -647,7 +647,7 @@ class SharedSet<T extends UniqueSerializable> {
 			return;
 		}
 		this.value.sample().add(entry);
-		this.value[localPortSymbol](this.v);
+		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
@@ -667,7 +667,7 @@ class SharedSet<T extends UniqueSerializable> {
 			return;
 		}
 		this.value.sample().delete(entry);
-		this.value[localPortSymbol](this.v);
+		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",

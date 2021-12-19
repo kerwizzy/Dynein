@@ -231,7 +231,7 @@ function createAndInsertElement<
 				});
 			} else if (typeof val === "function") {
 				//@ts-ignore
-				if (DyneinState.isDataPort(val)) {
+				if (DyneinState.isDataSignal(val)) {
 					const updateEventName: string | undefined = updateEventTable[attributeName];
 					if (updateEventName) {
 						el.addEventListener(updateEventName, () => {

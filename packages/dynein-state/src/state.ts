@@ -1,4 +1,4 @@
-const dataPortSymbol = Symbol("dataPortSymbol");
+const dataSignalSymbol = Symbol("dataSignalSymbol");
 
 // Internal state variables
 let warnOnNoDepAdd = false;
@@ -107,10 +107,10 @@ const DyneinState = {
 		return comp;
 	},
 
-	on<T>(port: () => T, listener: (newValue: T) => void): Destructable {
+	on<T>(signal: () => T, listener: (newValue: T) => void): Destructable {
 		let isFirst = true;
 		return DyneinState.watch(() => {
-			const newValue = port();
+			const newValue = signal();
 			if (!isFirst) {
 				DyneinState.ignore(() => {
 					listener(newValue);
@@ -136,11 +136,11 @@ const DyneinState = {
 	},
 
 	memo<T>(fn: () => T): () => T {
-		const internalPort = DyneinState.value<T>(undefined as unknown as T);
+		const internalSignal = DyneinState.value<T>(undefined as unknown as T);
 		DyneinState.watch(() => {
-			internalPort(fn());
+			internalSignal(fn());
 		});
-		return () => internalPort();
+		return () => internalSignal();
 	},
 
 	root(fn: () => void) {
@@ -167,7 +167,7 @@ const DyneinState = {
 	},
 
 	datavalue<T>(init: T, updateOnEqual: boolean) {
-		return makePortFromHandler(new SimpleValueHandler(init), updateOnEqual);
+		return makeSignalFromHandler(new SimpleValueHandler(init), updateOnEqual);
 	},
 
 	data<T>(init: T) {
@@ -178,20 +178,20 @@ const DyneinState = {
 		return DyneinState.datavalue(init, false);
 	},
 
-	makePort<T>(getter: () => T, setter: (val: T) => void): DataPort<T> {
+	makeSignal<T>(getter: () => T, setter: (val: T) => void): DataSignal<T> {
 		const out = function (newVal?: T) {
 			if (arguments.length === 0) {
 				return getter();
 			} else {
 				if (arguments.length !== 1) {
 					throw new Error(
-						"must have exactly 0 or 1 arguments to a value port read/write function"
+						"must have exactly 0 or 1 arguments to a value signal read/write function"
 					);
 				}
 				setter(newVal!);
 				return newVal!;
 			}
-		} as DataPort<T>;
+		} as DataSignal<T>;
 		out.sample = function () {
 			if (arguments.length === 0) {
 				let gotten: T;
@@ -204,7 +204,7 @@ const DyneinState = {
 			}
 		};
 		//@ts-ignore
-		out[dataPortSymbol] = true;
+		out[dataSignalSymbol] = true;
 		return out;
 	},
 
@@ -225,20 +225,20 @@ const DyneinState = {
 		return setIgnored(false, warnOnNoDepAdd, inner);
 	},
 
-	isDataPort(thing: any): thing is DataPort<any> {
-		return thing && thing[dataPortSymbol] === true;
+	isDataSignal(thing: any): thing is DataSignal<any> {
+		return thing && thing[dataSignalSymbol] === true;
 	}
 };
 
-export interface DataPort<T> {
+export interface DataSignal<T> {
 	(): T;
 	(newVal: T): T;
 	sample(): T;
-	readonly [dataPortSymbol]: true;
+	readonly [dataSignalSymbol]: true;
 }
 
-function makePortFromHandler<T>(handler: DataPortDependencyHandler<T>, updateOnEqual: boolean) {
-	return DyneinState.makePort(
+function makeSignalFromHandler<T>(handler: DataSignalDependencyHandler<T>, updateOnEqual: boolean) {
+	return DyneinState.makeSignal(
 		() => handler.read(),
 		(val) => handler.write(val, updateOnEqual)
 	);
@@ -354,7 +354,7 @@ let updateQueue = new UpdateQueue();
 // dependencies update.
 class Computation extends DestructionContext {
 	private fn: () => void;
-	private sources: Set<DataPortDependencyHandler<any>>;
+	private sources: Set<DataSignalDependencyHandler<any>>;
 	boundExec: () => void;
 
 	constructor(fn: () => void) {
@@ -364,7 +364,7 @@ class Computation extends DestructionContext {
 		this.boundExec = this.exec.bind(this);
 	}
 
-	addSource(src: DataPortDependencyHandler<any>) {
+	addSource(src: DataSignalDependencyHandler<any>) {
 		this.sources.add(src);
 	}
 
@@ -396,7 +396,7 @@ function findParentComputation(c: typeof currentContext): Computation | undefine
 	return c && (c instanceof Computation ? c : findParentComputation(c.parent));
 }
 
-abstract class DataPortDependencyHandler<T> {
+abstract class DataSignalDependencyHandler<T> {
 	abstract value: T;
 	drains: Set<Computation>;
 	lastUpdatedTick: number;
@@ -448,7 +448,7 @@ abstract class DataPortDependencyHandler<T> {
 	}
 }
 
-class SimpleValueHandler<T> extends DataPortDependencyHandler<T> {
+class SimpleValueHandler<T> extends DataSignalDependencyHandler<T> {
 	value: T;
 
 	constructor(init: T) {

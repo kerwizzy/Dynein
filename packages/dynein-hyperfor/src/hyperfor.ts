@@ -1,4 +1,4 @@
-import D, {DataPort, DestructionContext} from "dynein"
+import D, {DataSignal, DestructionContext} from "dynein"
 
 enum RenderState {
 	keep,

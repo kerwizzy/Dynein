@@ -1,12 +1,12 @@
-import { default as DyneinState, DataPort } from "dynein-state"
+import { default as DyneinState, DataSignal } from "dynein-state"
 import WatchedValue from "./WatchedValue.js"
 
 export default class WatchedSet<T> extends WatchedValue<Set<T>> {
-	readonly value: DataPort<Set<T>>;
+	readonly value: DataSignal<Set<T>>;
 
-	constructor(iterable?: T[] | Iterable<T> | null | undefined | DataPort<Set<T>>) {
+	constructor(iterable?: T[] | Iterable<T> | null | undefined | DataSignal<Set<T>>) {
 		super();
-		if (DyneinState.isDataPort(iterable)) {
+		if (DyneinState.isDataSignal(iterable)) {
 			this.value = iterable
 		} else {
 			this.value = DyneinState.data(new Set(iterable));

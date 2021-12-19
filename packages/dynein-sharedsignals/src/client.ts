@@ -5,7 +5,7 @@ import {
 	ClientToServerMessage,
 	ServerToClientMessage,
 	Serializable,
-	SharedPort,
+	SharedSignal,
 	SharedArray,
 	SharedSet,
 	SharedMap
@@ -47,7 +47,7 @@ export class SharedStateClient extends SharedStateEndpoint {
 	constructor(params: ClientParams) {
 		super();
 		this.unsubscribeReg = new FinalizationRegistry((key: string) => {
-			//For the moment don't do this.sharedPortsByKey.delete(key), so that get error on try to access
+			//For the moment don't do this.sharedSignalsByKey.delete(key), so that get error on try to access
 			this.send({
 				cmd: "unsubscribe",
 				key
@@ -98,45 +98,45 @@ export class SharedStateClient extends SharedStateEndpoint {
 		}
 	}
 
-	protected sharedPortsByKey: Map<string, SharedPort<any>> = new Map();
-	protected getPortByKey(key: string): SharedPort<any> | undefined {
-		if (this.sharedPortsByKey.has(key)) {
-			const val = this.sharedPortsByKey.get(key)!;
+	protected sharedSignalsByKey: Map<string, SharedSignal<any>> = new Map();
+	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
+		if (this.sharedSignalsByKey.has(key)) {
+			const val = this.sharedSignalsByKey.get(key)!;
 			return val
 		}
 	}
-	protected setPortByKey(key: string, port: SharedPort<any>) {
-		if (this.sharedPortsByKey.has(key)) {
-			throw new Error("Overwrite cached port")
+	protected setSignalByKey(key: string, signal: SharedSignal<any>) {
+		if (this.sharedSignalsByKey.has(key)) {
+			throw new Error("Overwrite cached signal")
 		}
-		this.sharedPortsByKey.set(key, port);
+		this.sharedSignalsByKey.set(key, signal);
 	}
 
 	/* broken GC-aware implementation
-	protected sharedPortsByKey: Map<string, WeakRef<SharedPort<any>>> = new Map();
+	protected sharedSignalsByKey: Map<string, WeakRef<SharedSignal<any>>> = new Map();
 
-	protected getPortByKey(key: string): SharedPort<any> | undefined {
-		if (this.sharedPortsByKey.has(key)) {
-			const ref = this.sharedPortsByKey.get(key)!;
+	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
+		if (this.sharedSignalsByKey.has(key)) {
+			const ref = this.sharedSignalsByKey.get(key)!;
 			const val = ref.deref();
 			if (!val) {
-				throw new Error("Tried to fetch a GCd port");
+				throw new Error("Tried to fetch a GCd signal");
 			} else {
 				return val;
 			}
 		}
 	}
 
-	protected setPortByKey(key: string, port: SharedPort<any>) {
-		this.sharedPortsByKey.set(key, new WeakRef(port));
-		this.unsubscribeReg.register(port, key, port);
+	protected setSignalByKey(key: string, signal: SharedSignal<any>) {
+		this.sharedSignalsByKey.set(key, new WeakRef(signal));
+		this.unsubscribeReg.register(signal, key, signal);
 	}
 	*/
 
-	_makeOrGetPort<T>(key: string, init: T, updateOnEqual: boolean): { cached: boolean, port: SharedPort<T> } {
-		const result = super._makeOrGetPort(key, init, updateOnEqual);
+	_makeOrGetSignal<T>(key: string, init: T, updateOnEqual: boolean): { cached: boolean, signal: SharedSignal<T> } {
+		const result = super._makeOrGetSignal(key, init, updateOnEqual);
 		if (!result.cached) {
-			this.send({ cmd: "get", key, init: this.serialize(result.port.sample() as any), updateOnEqual });
+			this.send({ cmd: "get", key, init: this.serialize(result.signal.sample() as any), updateOnEqual });
 		}
 		return result;
 	}
@@ -157,7 +157,7 @@ export class SharedStateClient extends SharedStateEndpoint {
 		});
 	}
 
-	public getObjectPort<T>(obj: any, init: T, updateOnEqual = false): SharedPort<T> {
-		return this._makeOrGetPort("$" + stableJSONStringify(obj), init, updateOnEqual).port;
+	public getObjectSignal<T>(obj: any, init: T, updateOnEqual = false): SharedSignal<T> {
+		return this._makeOrGetSignal("$" + stableJSONStringify(obj), init, updateOnEqual).signal;
 	}
 }

@@ -1,7 +1,7 @@
-import { default as DyneinState, DataPort } from "dynein-state"
+import { default as DyneinState, DataSignal } from "dynein-state"
 
 export default abstract class WatchedValue<U> {
-	abstract value: DataPort<U>;
+	abstract value: DataSignal<U>;
 
 	protected get v() {
 		return this.value.sample();

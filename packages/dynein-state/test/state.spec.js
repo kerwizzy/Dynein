@@ -5,8 +5,8 @@ const D = { state: DyneinState };
 describe("D.state", () => {
 	describe("D.state.value", () => {
 		it("disallows multiple arguments to set", () => {
-			const port = D.state.value(1);
-			assert.throws(() => port(2, 3, 4));
+			const signal = D.state.value(1);
+			assert.throws(() => signal(2, 3, 4));
 		});
 
 		it("returns the initial value", () => {
@@ -14,20 +14,20 @@ describe("D.state", () => {
 		});
 
 		it("sets the value", () => {
-			const port = D.state.value(1);
-			port(2);
-			assert.strictEqual(port(), 2);
+			const signal = D.state.value(1);
+			signal(2);
+			assert.strictEqual(signal(), 2);
 		});
 
 		it("sets the value for sample", () => {
-			const port = D.state.value(1);
-			port(2);
-			assert.strictEqual(port.sample(), 2);
+			const signal = D.state.value(1);
+			signal(2);
+			assert.strictEqual(signal.sample(), 2);
 		});
 
 		it("disallows setting .sample", () => {
-			const port = D.state.value(1);
-			assert.throws(() => port.sample(2));
+			const signal = D.state.value(1);
+			assert.throws(() => signal.sample(2));
 		});
 	});
 
@@ -61,25 +61,25 @@ describe("D.state", () => {
 		it("creates a watcher", () => {
 			D.state.root(() => {
 				assert.doesNotThrow(() => {
-					const port = D.state.value(0);
+					const signal = D.state.value(0);
 					D.state.watch(() => {
-						port();
+						signal();
 					});
 				});
 			});
 		});
 
 		it("reexecutes on dependency update", () => {
-			const port = D.state.value(0);
+			const signal = D.state.value(0);
 			let count = 0;
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
-					port();
+					signal();
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(count, 2);
 		});
 
@@ -102,30 +102,30 @@ describe("D.state", () => {
 		});
 
 		it("does not reexecute on equal value update", () => {
-			const port = D.state.value(0);
+			const signal = D.state.value(0);
 			let count = 0;
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
-					port();
+					signal();
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(0);
+			signal(0);
 			assert.strictEqual(count, 1);
 		});
 
 		it("does reexecute on equal data update", () => {
-			const port = D.state.data(0);
+			const signal = D.state.data(0);
 			let count = 0;
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
-					port();
+					signal();
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(0);
+			signal(0);
 			assert.strictEqual(count, 2);
 		});
 
@@ -158,7 +158,7 @@ describe("D.state", () => {
 		});
 
 		it("encapsulates dependencies", () => {
-			let port = D.state.value(0);
+			let signal = D.state.value(0);
 			let outerCount = 0;
 			let innerCount = 0;
 			D.state.root(() => {
@@ -166,20 +166,20 @@ describe("D.state", () => {
 					outerCount++;
 					D.state.watch(() => {
 						innerCount++;
-						port();
+						signal();
 					});
 				});
 			});
 			assert.strictEqual(outerCount, 1);
 			assert.strictEqual(innerCount, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(outerCount, 1);
 			assert.strictEqual(innerCount, 2);
 		});
 
 		it("destroys subwatchers on recompute", () => {
 			let innerWatch = D.state.value(true);
-			let port = D.state.value(0);
+			let signal = D.state.value(0);
 			let outerCount = 0;
 			let innerCount = 0;
 			D.state.root(() => {
@@ -188,34 +188,34 @@ describe("D.state", () => {
 					if (innerWatch()) {
 						D.state.watch(() => {
 							innerCount++;
-							port();
+							signal();
 						});
 					}
 				});
 			});
 			assert.strictEqual(outerCount, 1);
 			assert.strictEqual(innerCount, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(outerCount, 1);
 			assert.strictEqual(innerCount, 2);
 			innerWatch(false);
 			assert.strictEqual(outerCount, 2);
 			assert.strictEqual(innerCount, 2);
-			port(2);
+			signal(2);
 			assert.strictEqual(outerCount, 2);
 			assert.strictEqual(innerCount, 2);
 		});
 
 		it("calls cleanup", () => {
 			let innerWatch = D.state.value(true);
-			let port = D.state.value(0);
+			let signal = D.state.value(0);
 			let cleanupACount = 0;
 			let cleanupBCount = 0;
 			D.state.root(() => {
 				D.state.watch(() => {
 					if (innerWatch()) {
 						D.state.watch(() => {
-							port();
+							signal();
 							D.state.cleanup(() => {
 								cleanupACount++;
 							});
@@ -228,10 +228,10 @@ describe("D.state", () => {
 			});
 			assert.strictEqual(cleanupACount, 0);
 			assert.strictEqual(cleanupBCount, 0);
-			port(1);
+			signal(1);
 			assert.strictEqual(cleanupACount, 1);
 			assert.strictEqual(cleanupBCount, 0);
-			port(2);
+			signal(2);
 			assert.strictEqual(cleanupACount, 2);
 			assert.strictEqual(cleanupBCount, 0);
 			innerWatch(false);
@@ -243,20 +243,20 @@ describe("D.state", () => {
 		});
 
 		it("can be manually destroyed", () => {
-			const port = D.state.value(0);
+			const signal = D.state.value(0);
 			let count = 0;
 			let watcher;
 			D.state.root(() => {
 				watcher = D.state.watch(() => {
 					count++;
-					port();
+					signal();
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(count, 2);
 			watcher.destroy();
-			port(2);
+			signal(2);
 			assert.strictEqual(count, 2);
 		});
 
@@ -291,20 +291,20 @@ describe("D.state", () => {
 		});
 
 		it("keeps running if there are more changes", () => {
-			const port = D.state.value(0);
+			const signal = D.state.value(0);
 			let count = 0;
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
-					if (port() >= 1 && port() < 5) {
-						port(port() + 1);
+					if (signal() >= 1 && signal() < 5) {
+						signal(signal() + 1);
 					}
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(count, 6);
-			assert.strictEqual(port(), 5);
+			assert.strictEqual(signal(), 5);
 		});
 
 		it("executes in order (test 1)", () => {
@@ -484,17 +484,17 @@ describe("D.state", () => {
 		});
 
 		it("delays execution when in watch init", () => {
-			const port = D.state.value(0);
+			const signal = D.state.value(0);
 			let order = "";
 			D.state.root(() => {
 				D.state.watch(() => {
 					order += "A{";
-					port();
+					signal();
 					order += "}A ";
 				});
 				D.state.watch(() => {
 					order += "B{";
-					port(1);
+					signal(1);
 					order += "}B ";
 				});
 			});
@@ -503,17 +503,17 @@ describe("D.state", () => {
 
 		it("delays execution when in watch execute", () => {
 			const a = D.state.value(1);
-			const port = D.state.value(0);
+			const signal = D.state.value(0);
 			let order = "";
 			D.state.root(() => {
 				D.state.watch(() => {
 					order += "A{";
-					port();
+					signal();
 					order += "}A ";
 				});
 				D.state.watch(() => {
 					order += "B{";
-					port(a());
+					signal(a());
 					order += "}B ";
 				});
 			});
@@ -718,17 +718,17 @@ describe("D.state", () => {
 
 		it("blocks dependency collection", () => {
 			let count = 0;
-			let port = D.state.value(0);
+			let signal = D.state.value(0);
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
 					D.state.ignore(() => {
-						port();
+						signal();
 					});
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(count, 1);
 		});
 
@@ -830,19 +830,19 @@ describe("D.state", () => {
 
 		it("cancels ignore", () => {
 			let count = 0;
-			let port = D.state.value(0);
+			let signal = D.state.value(0);
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
 					D.state.ignore(() => {
 						D.state.unignore(() => {
-							port();
+							signal();
 						});
 					});
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(count, 2);
 		});
 
@@ -887,26 +887,26 @@ describe("D.state", () => {
 		});
 	});
 
-	describe("D.state.makePort", () => {
+	describe("D.state.makeSignal", () => {
 		it("creates something portlike", () => {
 			let setVal;
-			let port = D.state.makePort(
+			let signal = D.state.makeSignal(
 				() => 5,
 				(val) => {
 					setVal = val;
 				}
 			);
-			assert.strictEqual(port(), 5);
-			port(3);
+			assert.strictEqual(signal(), 5);
+			signal(3);
 			assert.strictEqual(setVal, 3);
-			assert.strictEqual(port(), 5);
-			assert.strictEqual(port.sample(), 5);
+			assert.strictEqual(signal(), 5);
+			assert.strictEqual(signal.sample(), 5);
 		});
 
 		it("does not have internal state", () => {
 			let count = 0;
 			let setVal;
-			let port = D.state.makePort(
+			let signal = D.state.makeSignal(
 				() => 5,
 				(val) => {
 					setVal = val;
@@ -916,11 +916,11 @@ describe("D.state", () => {
 			D.state.root(() => {
 				D.state.watch(() => {
 					count++;
-					port();
+					signal();
 				});
 			});
 			assert.strictEqual(count, 1);
-			port(1);
+			signal(1);
 			assert.strictEqual(count, 1);
 		});
 	});

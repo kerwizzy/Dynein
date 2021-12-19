@@ -197,13 +197,13 @@ describe("D.dom", ()=>{
 			})
 
 			it("destroys watchers inside listeners on listener reexecute", ()=>{
-				let port = D.state.value(0)
+				let signal = D.state.value(0)
 				let el
 				let count = 0
 				const document = mount(()=>{
 					el = D.dom.elements.button({onclick: function() {
 						D.state.watch(()=>{
-							port()
+							signal()
 							count++
 						})
 					}})
@@ -214,7 +214,7 @@ describe("D.dom", ()=>{
 				assert.strictEqual(count, 1)
 				el.dispatchEvent(new window.Event("click"))
 				assert.strictEqual(count, 2)
-				port(2)
+				signal(2)
 				assert.strictEqual(count, 3)
 			})
 		})
@@ -228,33 +228,33 @@ describe("D.dom", ()=>{
 			})
 
 			it("watches dependencies", ()=>{
-				const port = D.state.value(0)
+				const signal = D.state.value(0)
 				const document = mount(()=>{
-					D.dom.elements.a({name:()=>port()})
+					D.dom.elements.a({name:()=>signal()})
 				})
 				assert.strictEqual(document.body.innerHTML, `<a name="0"></a>`)
-				port(1)
+				signal(1)
 				assert.strictEqual(document.body.innerHTML, `<a name="1"></a>`)
 			})
 
-			it("warns when passing a port to a non-evented attr", ()=>{
-				const port = D.state.value(0)
+			it("warns when passing a signal to a non-evented attr", ()=>{
+				const signal = D.state.value(0)
 				const document = mount(()=>{
-					D.dom.elements.div({myattr:port})
+					D.dom.elements.div({myattr:signal})
 				})
 				assert.ok( console.warn.calledWithMatch("No update event") )
 			})
 
-			it("updates the port for evented attrs", ()=>{
-				const port = D.state.value("txt")
+			it("updates the signal for evented attrs", ()=>{
+				const signal = D.state.value("txt")
 				let el
 				const document = mount(()=>{
-					el = D.dom.elements.input({value:port})
+					el = D.dom.elements.input({value:signal})
 				})
 				assert.strictEqual(el.value, "txt")
 				el.value = "test"
 				el.dispatchEvent(new window.Event("input"))
-				assert.strictEqual(port(), "test")
+				assert.strictEqual(signal(), "test")
 			})
 		})
 	})
@@ -289,12 +289,12 @@ describe("D.dom", ()=>{
 		})
 
 		it("updates on deps change", ()=>{
-			let port = D.state.value("test")
+			let signal = D.state.value("test")
 			const document = mount(()=>{
-				D.dom.text(()=>port())
+				D.dom.text(()=>signal())
 			})
 			assert.strictEqual(document.body.innerHTML, `test`)
-			port("1234")
+			signal("1234")
 			assert.strictEqual(document.body.innerHTML, `1234`)
 		})
 
@@ -456,39 +456,39 @@ describe("D.dom", ()=>{
 		})
 
 		it("rerenders on state change", ()=>{
-			const port = D.state.value(1)
+			const signal = D.state.value(1)
 			const document = mount(()=>{
-				D.dom.if(()=>port(), ()=>{
+				D.dom.if(()=>signal(), ()=>{
 					D.dom.elements.div()
 				}).else(()=>{
 					D.dom.elements.span()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
-			port(0)
+			signal(0)
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<span></span>`)
 		})
 
 		it("does not track inner dependencies", ()=>{
-			const port = D.state.value(1)
+			const signal = D.state.value(1)
 			const document = mount(()=>{
 				D.dom.if(()=>1, ()=>{
-					if (port()) {
+					if (signal()) {
 						D.dom.elements.div()
 					}
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
 			assert.ok( console.error.calledWithMatch("add a dependency but didn't") )
-			port(0)
+			signal(0)
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`) //shouldn't have changed
 		})
 
 		it("does not rerender inner when reaching the same condition", ()=>{
-			const port = D.state.value(1)
+			const signal = D.state.value(1)
 			let count = 0
 			const document = mount(()=>{
-				D.dom.if(port, ()=>{
+				D.dom.if(signal, ()=>{
 					count++
 					D.dom.elements.div()
 				}).else(()=>{
@@ -496,15 +496,15 @@ describe("D.dom", ()=>{
 				})
 			})
 			assert.strictEqual(count, 1)
-			port(true)
+			signal(true)
 			assert.strictEqual(count, 1)
 		})
 
 		it("does not keep-alive inner", ()=>{
-			const port = D.state.value(1)
+			const signal = D.state.value(1)
 			let count = 0
 			const document = mount(()=>{
-				D.dom.if(port, ()=>{
+				D.dom.if(signal, ()=>{
 					count++
 					D.dom.elements.div()
 				}).else(()=>{
@@ -512,8 +512,8 @@ describe("D.dom", ()=>{
 				})
 			})
 			assert.strictEqual(count, 1)
-			port(false)
-			port(true)
+			signal(false)
+			signal(true)
 			assert.strictEqual(count, 2)
 		})
 	})
@@ -529,10 +529,10 @@ describe("D.dom", ()=>{
 		})
 
 		it("rerenders on state change", ()=>{
-			const port = D.state.value(1)
+			const signal = D.state.value(1)
 			const document = mount(()=>{
 				D.dom.replacer(()=>{
-					if (port()) {
+					if (signal()) {
 						D.dom.elements.div()
 					} else {
 						D.dom.elements.span()
@@ -540,7 +540,7 @@ describe("D.dom", ()=>{
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
-			port(0)
+			signal(0)
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<span></span>`)
 		})
 
