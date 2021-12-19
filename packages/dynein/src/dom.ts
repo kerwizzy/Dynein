@@ -23,62 +23,32 @@ const updateEventTable: Record<string, string> = {
 	selectedIndex: "input" //<select>
 };
 
-abstract class VRange {
-	protected startNode: Node;
-	protected endNode: Node;
+function replacementVRange(start: Node, end: Node, setupReplacements: (replaceInner: (inner: () => void) => void) => void) {
+	let isFirst = true;
 
-	constructor(startNode: Node, endNode: Node) {
-		this.startNode = startNode;
-		this.endNode = endNode;
-	}
-}
+	let destroyed = false;
+	DyneinState.cleanup(() => {
+		destroyed = true;
+	});
+	setupReplacements((inner: () => void) => {
+		if (destroyed) {
+			return;
+		}
+		if (!start.parentNode) {
+			throw new Error("Unexpected state");
+		}
+		if (!isFirst) {
+			const range = document.createRange();
+			range.setStartAfter(start);
+			range.setEndBefore(end);
+			range.deleteContents();
+		}
 
-function deleteRange(start: Node, end: Node, deleteMarkers = false) {
-	let range = document.createRange();
-	if (deleteMarkers) {
-		range.setStartBefore(start);
-	} else {
-		range.setStartAfter(start);
-	}
-	if (deleteMarkers) {
-		range.setEndAfter(end);
-	} else {
-		range.setEndBefore(end);
-	}
-	range.deleteContents();
-}
-
-type SetupReplacementsFunction = (
-	replaceInner: (inner: () => void) => void,
-	VRange: ReplacementVRange
-) => void;
-class ReplacementVRange extends VRange {
-	constructor(startNode: Node, endNode: Node, setupReplacements: SetupReplacementsFunction) {
-		super(startNode, endNode);
-
-		let isFirst = true;
-
-		let destroyed = false;
-		DyneinState.cleanup(() => {
-			destroyed = true;
+		isFirst = false;
+		runInNodeContext(start.parentNode, end, ()=>{
+			DyneinState.expectStatic(inner)
 		});
-		setupReplacements((inner: () => void) => {
-			if (destroyed) {
-				return;
-			}
-			if (!this.startNode.parentNode) {
-				throw new Error("Unexpected state");
-			}
-			if (!isFirst) {
-				deleteRange(this.startNode, this.endNode);
-			}
-
-			isFirst = false;
-			runInNodeContext(this.startNode.parentNode, this.endNode, ()=>{
-				DyneinState.expectStatic(inner)
-			});
-		}, this);
-	}
+	});
 }
 
 const customPropertyHandlers: Map<string, (el: SVGElement | HTMLElement, val: Primitive) => void> =
@@ -415,7 +385,7 @@ const DyneinDOM = {
 			dependent: (inner: () => void) => void
 		) => void
 	) {
-		new ReplacementVRange(
+		replacementVRange(
 			insertNode(document.createComment("<async>")),
 			insertNode(document.createComment("</async>")),
 			($r) => {
@@ -427,7 +397,7 @@ const DyneinDOM = {
 		);
 	},
 	replacer(inner: () => void) {
-		new ReplacementVRange(
+		replacementVRange(
 			insertNode(document.createComment("<replacer>")),
 			insertNode(document.createComment("</replacer>")),
 			($r) => {
@@ -440,31 +410,14 @@ const DyneinDOM = {
 		);
 	},
 	if(ifCond: () => any, inner: () => void) {
-		let currentIndex = DyneinState.value(-1);
-
-		let conds: (() => boolean)[] = [];
-		let nConds = DyneinState.value(conds.length);
+		const conds: (() => boolean)[] = [];
+		const inners: (() => void)[] = []
+		const nConds = DyneinState.value(conds.length);
 		function addStage(cond: () => boolean, inner: () => void) {
-			let ownIndex = conds.length;
-			DyneinDOM.replacer(() => {
-				if (ownIndex === currentIndex()) {
-					DyneinState.expectStatic(inner);
-				}
-			});
-
 			conds.push(cond);
-			nConds(conds.length);
+			inners.push(inner)
+			nConds(conds.length)
 		}
-
-		DyneinState.watch(() => {
-			for (let i = 0; i < nConds(); i++) {
-				if (conds[i]()) {
-					currentIndex(i);
-					return;
-				}
-			}
-			currentIndex(-1);
-		});
 
 		const ifStageMaker = {
 			elseif(cond: () => any, inner: () => void) {
@@ -477,6 +430,29 @@ const DyneinDOM = {
 		};
 
 		addStage(ifCond, inner);
+
+		const currentInner = DyneinState.value(()=>{})
+
+		DyneinState.watch(()=>{
+			for (let i = 0; i < nConds(); i++) {
+				if (conds[i]()) {
+					currentInner(inners[i])
+					return;
+				}
+			}
+			currentInner(()=>{})
+		});
+
+		const saved = DyneinState.getContext()
+		DyneinDOM.replacer(() => {
+			const inner = currentInner()
+			DyneinState.setContext(saved, ()=>{
+				DyneinState.expectStatic(()=>{
+					inner()
+				})
+			})
+		})
+
 		return ifStageMaker;
 	},
 	customProperty(prop: string, handler: (el: SVGElement | HTMLElement, val: Primitive) => void) {

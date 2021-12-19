@@ -1,8 +1,12 @@
 import { default as D } from "dynein"
 
 function mount(inner) {
-	const test = document.createElement("div")
-	D.dom.mountAt(test, inner)
+	let test
+	D.state.root(()=>{
+		D.dom.mount(document.createElement("div"), ()=>{
+			test = D.dom.elements.div(inner)
+		})
+	})
 	return {body: test}
 }
 
@@ -409,6 +413,38 @@ describe("D.dom", ()=>{
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<a></a>`)
 		})
 
+		it("renders nothing when all are false", ()=>{
+			const document = mount(()=>{
+				D.dom.if(()=>0, ()=>{
+					D.dom.elements.div()
+				}).elseif(()=>0, ()=>{
+					D.dom.elements.span()
+				})
+			})
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+		})
+
+		it("renders nothing when all are changed to be false", ()=>{
+			const a = D.state.value(0)
+			const b = D.state.value(0)
+			const document = mount(()=>{
+				D.dom.if(()=>a(), ()=>{
+					D.dom.elements.div()
+				}).elseif(()=>b(), ()=>{
+					D.dom.elements.span()
+				})
+			})
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			b(1)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<span></span>`)
+			a(1)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
+			b(0)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
+			a(0)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+		})
+
 		it("passes errors", ()=>{
 			const document = mount(()=>{
 				assert.throws(()=>{
@@ -479,6 +515,43 @@ describe("D.dom", ()=>{
 			port(false)
 			port(true)
 			assert.strictEqual(count, 2)
+		})
+	})
+
+	describe("D.dom.replacer", ()=>{
+		it("creates", ()=>{
+			const document = mount(()=>{
+				D.dom.replacer(()=>{
+					D.dom.elements.div()
+				})
+			})
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
+		})
+
+		it("rerenders on state change", ()=>{
+			const port = D.state.value(1)
+			const document = mount(()=>{
+				D.dom.replacer(()=>{
+					if (port()) {
+						D.dom.elements.div()
+					} else {
+						D.dom.elements.span()
+					}
+				})
+			})
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
+			port(0)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<span></span>`)
+		})
+
+		it("passes errors", ()=>{
+			const document = mount(()=>{
+				assert.throws(()=>{
+					D.dom.replacer(()=>{
+						throw new Error("err")
+					})
+				})
+			})
 		})
 	})
 })
