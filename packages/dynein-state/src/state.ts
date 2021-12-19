@@ -192,17 +192,6 @@ const DyneinState = {
 				return newVal!;
 			}
 		} as DataSignal<T>;
-		out.sample = function () {
-			if (arguments.length === 0) {
-				let gotten: T;
-				DyneinState.ignore(() => {
-					gotten = getter();
-				});
-				return gotten!;
-			} else {
-				throw new Error("Cannot write to .sample");
-			}
-		};
 		//@ts-ignore
 		out[dataSignalSymbol] = true;
 		return out;
@@ -233,7 +222,6 @@ const DyneinState = {
 export interface DataSignal<T> {
 	(): T;
 	(newVal: T): T;
-	sample(): T;
 	readonly [dataSignalSymbol]: true;
 }
 
