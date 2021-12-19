@@ -101,7 +101,9 @@ function setContext(ctx: DestructionContext | null | undefined, inner: () => voi
 const DyneinState = {
 	watch(fn: () => void): Destructable {
 		const comp = new Computation(fn);
-		comp.exec();
+		updateQueue.delayStart(()=>{
+			comp.exec();
+		})
 		return comp;
 	},
 
@@ -158,6 +160,10 @@ const DyneinState = {
 
 	batch(fn: () => void) {
 		updateQueue.delayStart(fn);
+	},
+
+	subclock(fn: () => void) {
+		updateQueue.subclock(fn);
 	},
 
 	datavalue<T>(init: T, updateOnEqual: boolean) {
@@ -249,14 +255,16 @@ interface Console {
 
 declare var console: Console;
 
-// Singleton internal class to keep track of pending updates
+// Internal class to keep track of pending updates
 class UpdateQueue {
+	parent: UpdateQueue | null
 	thisTick: Map<any, () => void>;
 	nextTick: Map<any, () => void>;
 	ticking: boolean;
 	startDelayed: boolean;
 
-	constructor() {
+	constructor(parent: UpdateQueue | null = null) {
+		this.parent = parent
 		this.thisTick = new Map();
 		this.nextTick = new Map();
 		this.ticking = false;
@@ -286,11 +294,12 @@ class UpdateQueue {
 			}
 
 			subTickN++;
-			for (let fn of this.thisTick.values()) {
+			for (let [key, val] of this.thisTick) {
+				this.thisTick.delete(key)
 				try {
-					fn();
+					val();
 				} catch (err) {
-					console.warn("Caught error", err, "in tick function", fn);
+					console.warn("Caught error", err, "in tick function", val);
 					if (!firstErr) {
 						firstErr = err;
 					}
@@ -301,6 +310,13 @@ class UpdateQueue {
 		if (firstErr) {
 			throw firstErr;
 		}
+	}
+
+	subclock(fn: ()=>void) {
+		const oldUpdateQueue = updateQueue
+		updateQueue = new UpdateQueue(this)
+		fn()
+		updateQueue = oldUpdateQueue
 	}
 
 	delayStart(fn: () => void) {
@@ -314,28 +330,37 @@ class UpdateQueue {
 		}
 	}
 
+	unschedule(key: any) {
+		this.thisTick.delete(key)
+		this.nextTick.delete(key)
+		this.parent?.unschedule(key)
+	}
+
 	schedule(key: any, fn: () => void) {
-		//key is to stop duplication during a delayStart
+		if (this.ticking && this.thisTick.has(key)) {
+			// if this is already scheduled on the current tick but not started yet, don't schedule it
+			// again on the next tick
+			return
+		}
+		this.parent?.unschedule(key)
 		this.nextTick.set(key, fn);
 		this.start();
 	}
 }
 
-const updateQueue = new UpdateQueue();
+let updateQueue = new UpdateQueue();
 
 // Internal class created by DyneinState.watch. Collects dependencies of `fn` and rexecutes `fn` when
 // dependencies update.
 class Computation extends DestructionContext {
 	private fn: () => void;
 	private sources: Set<DataPortDependencyHandler<any>>;
-	scheduled: boolean;
 	boundExec: () => void;
 
 	constructor(fn: () => void) {
 		super();
 		this.fn = fn.bind(undefined);
 		this.sources = new Set();
-		this.scheduled = false;
 		this.boundExec = this.exec.bind(this);
 	}
 
@@ -347,24 +372,19 @@ class Computation extends DestructionContext {
 		if (this.destroyed) {
 			return;
 		}
-		this.scheduled = false;
 
+		this.removeSources()
 		setContext(this, () => {
 			setIgnored(false, warnOnNoDepAdd, this.fn);
 		});
 	}
 
 	schedule() {
-		if (this.scheduled) {
-			return;
-		}
-		this.reset();
+		this.reset() // Destroy subwatchers, since don't need to reexecute
 		updateQueue.schedule(this, this.boundExec);
-		this.scheduled = true;
 	}
 
-	reset() {
-		super.reset();
+	removeSources() {
 		for (let src of this.sources) {
 			src.removeDrain(this);
 		}

@@ -327,6 +327,24 @@ describe("D.state", () => {
 			4    |
 			\   /
 			  D
+
+			Tick 0
+				Set 1
+					Add A, B to Tick 1
+			Tick 1
+				Exec A
+					Set 2
+						Add C to Tick 2
+				Exec B
+					Set 3
+						Add D to Tick 2
+			Tick 2
+				Exec C
+					Set 4
+						Try add D to Tick 3, but cancelled since already in Tick 2
+				Exec D
+			Tick 3
+				[nothing]
 			*/
 
 			let order = "";
@@ -339,18 +357,18 @@ describe("D.state", () => {
 				});
 				D.state.watch(() => {
 					order += "C{";
-					p4(p2() + 1);
+					p4(p2() + Math.random());
 					order += "}C ";
 				});
 
 				D.state.watch(() => {
 					order += "A{";
-					p2(p1() + 1);
+					p2(p1() + Math.random());
 					order += "}A ";
 				});
 				D.state.watch(() => {
 					order += "B{";
-					p3(p1() + 5);
+					p3(p1() + Math.random());
 					order += "}B ";
 				});
 			});
@@ -503,6 +521,160 @@ describe("D.state", () => {
 			a(2);
 			assert.strictEqual(order, "B{}B A{}A ");
 		});
+
+		it("batches second stage changes", () => {
+			const a = D.state.value(0);
+			const b = D.state.value(0)
+			let order = ""
+			D.state.root(() => {
+				D.state.watch(()=>{
+					order += "A{"+a()
+					order += "}A "
+				})
+				D.state.watch(()=>{
+					order += "B{"+b()
+					order += "}B "
+				})
+				D.state.watch(() => {
+					order += "s{"+a()+" "
+					if (a() >= 1 && a() < 3) {
+						order += "a++{"
+						a(a() + 1);
+						order += "}a++ "
+
+						order += "b++{"
+						b(b() + 1)
+						order += "}b++ "
+					}
+					order += "}s "
+				});
+			});
+			assert.strictEqual(order, "A{0}A B{0}B s{0 }s ");
+			order = ""
+			a(1)
+			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{}b++ }s A{2}A s{2 a++{}a++ b++{}b++ }s B{2}B A{3}A s{3 }s ");
+		})
+
+		it("subclock (test 1)", () => {
+			const a = D.state.value(0);
+			const b = D.state.value(0)
+			let order = ""
+			D.state.root(() => {
+				D.state.watch(()=>{
+					order += "A{"+a()
+					order += "}A "
+				})
+				D.state.watch(()=>{
+					order += "B{"+b()
+					order += "}B "
+				})
+				D.state.watch(() => {
+					order += "s{"+a()+" "
+					if (a() >= 1 && a() < 3) {
+						order += "a++{"
+						a(a() + 1);
+						order += "}a++ "
+
+						order += "b++{"
+						D.state.subclock(()=>{
+							b(D.state.sample(b) + 1)
+						})
+						order += "}b++ "
+					}
+					order += "}s "
+				});
+			});
+			assert.strictEqual(order, "A{0}A B{0}B s{0 }s ");
+			order = ""
+			a(1)
+			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{B{1}B }b++ }s A{2}A s{2 a++{}a++ b++{B{2}B }b++ }s A{3}A s{3 }s ");
+		})
+
+		it("subclock (test 2)", () => {
+			const a = D.state.value(0);
+			const b = D.state.value(0)
+			let order = ""
+
+			let level = 0
+			const log = (v)=>{
+				if (v.includes("}")) {
+					level--
+				}
+				//console.log("    ".repeat(level)+v)
+				if (v.includes("{")) {
+					level++
+				}
+				order += v
+				return v
+			}
+
+
+			D.state.root(() => {
+				D.state.watch(()=>{
+					log("A{"+a())
+					log("}A ")
+				})
+				D.state.watch(()=>{
+					log("B{"+b())
+					log("}B ")
+				})
+				D.state.watch(() => {
+					log("s{"+a()+" ")
+					if (a() >= 1 && a() < 3) {
+						log("a++{")
+						a(a() + 1);
+						log("}a++ ")
+
+						log("b++{")
+						const newB = D.state.sample(b)+1
+						b(Math.random()) //schedule to fire
+						D.state.subclock(()=>{
+							D.state.subclock(()=>{
+								D.state.subclock(()=>{
+									log("subclock{")
+									D.state.subclock(()=>{
+										log("inner{"+newB+" ")
+										b(newB) //this should cancel refiring
+										log("}inner ")
+									})
+									log("}subclock ")
+								})
+							})
+						})
+						log("}b++ ")
+					}
+					log("}s ")
+				});
+			});
+			assert.strictEqual(order, "A{0}A B{0}B s{0 }s ");
+			order = ""
+			a(1)
+			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{subclock{inner{1 B{1}B }inner }subclock }b++ }s A{2}A s{2 a++{}a++ b++{subclock{inner{2 B{2}B }inner }subclock }b++ }s A{3}A s{3 }s ");
+		})
+
+		it("Sjs issue 32", ()=>{
+			D.state.root(() => {
+				const data = D.state.data(null)
+				const cache = D.state.value(D.state.sample(() => !!data()))
+				const child = data => {
+					D.state.watch(() => {
+						console.log("nested", data().length)
+					});
+					return "Hi";
+				};
+				D.state.watch(() => {
+					cache(!!data())
+				});
+				const memo = D.state.memo(() => (cache() ? child(data) : undefined));
+				D.state.watch(() => {
+					console.log("view", memo())
+				});
+				console.log("ON");
+				data("name");
+				console.log("OFF");
+				data(undefined);
+			})
+		})
 
 		it("Doesn't execute a destroy-pending watcher", () => {
 			const a = D.state.value(false);
