@@ -1,15 +1,13 @@
 {
-  "name": "dynein-state",
+  "name": "@dynein/state",
   "private": true,
   "version": "0.1.0",
-  "description": "",
-  "type":"module",
+  "type": "module",
   "types": "src/state.ts",
   "main": "built/state.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha"
   },
-  "author": "kerwizzy",
-  "license": "MIT"
+  "author": "kerwizzy"
 }
