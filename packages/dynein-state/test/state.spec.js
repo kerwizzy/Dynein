@@ -22,12 +22,7 @@ describe("D.state", () => {
 		it("sets the value for sample", () => {
 			const signal = D.state.value(1);
 			signal(2);
-			assert.strictEqual(signal.sample(), 2);
-		});
-
-		it("disallows setting .sample", () => {
-			const signal = D.state.value(1);
-			assert.throws(() => signal.sample(2));
+			assert.strictEqual(D.state.sample(signal), 2);
 		});
 	});
 
@@ -900,7 +895,6 @@ describe("D.state", () => {
 			signal(3);
 			assert.strictEqual(setVal, 3);
 			assert.strictEqual(signal(), 5);
-			assert.strictEqual(signal.sample(), 5);
 		});
 
 		it("does not have internal state", () => {

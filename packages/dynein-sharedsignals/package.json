@@ -13,6 +13,8 @@
   "author": "kerwizzy",
   "license": "ISC",
   "dependencies": {
+    "@types/double-ended-queue": "^2.1.1",
+    "double-ended-queue": "^2.1.0-0",
     "dynein-state": "file:../dynein-state"
   }
 }

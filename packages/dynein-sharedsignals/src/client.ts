@@ -1,3 +1,4 @@
+import { default as DyneinState, DataSignal } from "dynein-state";
 import {
 	SharedStateEndpoint,
 	SetMessage,
@@ -47,7 +48,8 @@ export class SharedStateClient extends SharedStateEndpoint {
 	constructor(params: ClientParams) {
 		super();
 		this.unsubscribeReg = new FinalizationRegistry((key: string) => {
-			//For the moment don't do this.sharedSignalsByKey.delete(key), so that get error on try to access
+			//console.log("GC",key)
+			this.sharedSignalsByKey.delete(key)
 			this.send({
 				cmd: "unsubscribe",
 				key
@@ -98,6 +100,8 @@ export class SharedStateClient extends SharedStateEndpoint {
 		}
 	}
 
+	/* Old, non-GC aware implementation
+
 	protected sharedSignalsByKey: Map<string, SharedSignal<any>> = new Map();
 	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
 		if (this.sharedSignalsByKey.has(key)) {
@@ -111,8 +115,8 @@ export class SharedStateClient extends SharedStateEndpoint {
 		}
 		this.sharedSignalsByKey.set(key, signal);
 	}
+	*/
 
-	/* broken GC-aware implementation
 	protected sharedSignalsByKey: Map<string, WeakRef<SharedSignal<any>>> = new Map();
 
 	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
@@ -120,7 +124,8 @@ export class SharedStateClient extends SharedStateEndpoint {
 			const ref = this.sharedSignalsByKey.get(key)!;
 			const val = ref.deref();
 			if (!val) {
-				throw new Error("Tried to fetch a GCd signal");
+				//console.warn("Maybe tried to fetch a GCd signal");
+				return undefined
 			} else {
 				return val;
 			}
@@ -131,12 +136,20 @@ export class SharedStateClient extends SharedStateEndpoint {
 		this.sharedSignalsByKey.set(key, new WeakRef(signal));
 		this.unsubscribeReg.register(signal, key, signal);
 	}
-	*/
+
+	protected gcProtected = new Set<SharedSignal<any>>()
+	protected protectFromGC(signal: SharedSignal<any>) {
+		this.gcProtected.add(signal)
+	}
+
+	protected unprotectFromGC(signal: SharedSignal<any>) {
+		this.gcProtected.delete(signal)
+	}
 
 	_makeOrGetSignal<T>(key: string, init: T, updateOnEqual: boolean): { cached: boolean, signal: SharedSignal<T> } {
 		const result = super._makeOrGetSignal(key, init, updateOnEqual);
 		if (!result.cached) {
-			this.send({ cmd: "get", key, init: this.serialize(result.signal.sample() as any), updateOnEqual });
+			this.send({ cmd: "get", key, init: this.serialize(DyneinState.sample(result.signal) as any), updateOnEqual });
 		}
 		return result;
 	}

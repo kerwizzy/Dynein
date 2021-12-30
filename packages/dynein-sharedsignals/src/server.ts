@@ -8,6 +8,8 @@ import {
 	SharedSignal
 } from "./serialize.js";
 
+import Deque from "double-ended-queue"
+
 interface Client<T> {
 	readonly id: string;
 	metadata: T;
@@ -78,6 +80,12 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 	sharedSignalsByKey: Map<string, SharedSignal<any>> = new Map();
 	private params: ServerParams<T>;
 
+	private serverHandleMessageAwaits = 0;
+
+	private messageQueue: Deque<[Client<T>, ClientToServerMessage]> = new Deque()
+	private handlingMessages: boolean = false
+
+
 	uuid() {
 		return this.params.uuid();
 	}
@@ -104,24 +112,66 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 					return;
 				}
 				const client = this.clients.get(clientID)!;
-				try {
-					await this.serverHandleMessage(client, msg);
-				} catch (err) {
-					console.log("Got error from handle message: ", err);
-					this.sendToClient(client, {
-						cmd: "err",
-						causeCmd: msg.cmd,
-						err: "Server error"
-					});
-				}
+				this.messageQueue.push([client, msg])
+				setTimeout(()=>{
+					this.handleMessageChunks()
+				}, 40)
 			},
 			(clientID, metadata) => {
 				this.clients.set(clientID, { id: clientID, metadata });
 			},
 			(clientID) => {
+				const client = this.clients.get(clientID)
+				if (!client) {
+					console.warn("Unexpected state: delete nonexistent clientID")
+					return
+				}
 				this.clients.delete(clientID);
+				for (const subscribers of this.subscriptions.values()) {
+					subscribers.delete(client)
+				}
 			}
 		);
+
+		const logStatus = () => {
+			//console.log(`subscriptions: ${this.subscriptions.size} sharedSignalsByKey: ${this.sharedSignalsByKey.size} queued msgs: ${this.messageQueue.length} serverHandleMessageAwaits ${this.serverHandleMessageAwaits}`)
+			setTimeout(logStatus, 2_000)
+		}
+		logStatus()
+	}
+
+	protected async handleMessageChunks() {
+		if (this.handlingMessages) {
+			return
+		}
+		const chunkSize = 500
+		this.handlingMessages = true
+		while (this.messageQueue.length > 0) {
+			const msgs: [Client<T>, ClientToServerMessage][] = []
+			for (let i = 0; i<chunkSize; i++) {
+				if (this.messageQueue.length === 0) {
+					break
+				}
+				msgs.push(this.messageQueue.shift()!)
+			}
+			await Promise.all(msgs.map(([client, msg]) => this.tryServerHandleMessage(client, msg)))
+		}
+		this.handlingMessages = false
+	}
+
+	protected async tryServerHandleMessage(client: Client<T>, msg: ClientToServerMessage) {
+		this.serverHandleMessageAwaits++
+		try {
+			await this.serverHandleMessage(client, msg);
+		} catch (err) {
+			console.log("Got error from handle message: ", err);
+			this.sendToClient(client, {
+				cmd: "err",
+				causeCmd: msg.cmd,
+				err: "Server error"
+			});
+		}
+		this.serverHandleMessageAwaits--
 	}
 
 	protected async broadcastUpdate(
@@ -129,12 +179,12 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 		blockSendTo?: string | undefined
 	) {
 		if (!this.subscriptions.has(msg.key)) {
-			throw new Error("Unexpected state");
+			return
 		}
 		const subscriptions = this.subscriptions.get(msg.key)!;
 		for (let client of subscriptions) {
 			if (blockSendTo !== client.id) {
-				if (this.params.checkCanRead(client.id, msg.key, client.metadata)) {
+				if (await this.params.checkCanRead(client.id, msg.key, client.metadata)) {
 					this.sendToClient(client, msg);
 				}
 			}
@@ -239,6 +289,9 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 										msg.updateOnEqual,
 										client.metadata
 									);
+									if (!this.subscriptions.get(msg.key)?.has(client)) {
+										return // unsubscribed in meantime, no need to send got
+									}
 									this.sendToClient(client, {
 										cmd: "got",
 										key: msg.key,
@@ -344,7 +397,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 					}
 					const subscriptionSet = this.subscriptions.get(msg.key)!;
 					subscriptionSet.delete(client);
-					if (keyType === KeyType.uuid) {
+					if (keyType === KeyType.uuid || keyType === KeyType.object) {
 						if (subscriptionSet.size === 0) {
 							//TODO: maybe there could be a race condition here if one last client leaves and then another now client requests at about the same time?
 							this.sharedSignalsByKey.delete(msg.key);
@@ -387,5 +440,13 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 	}
 	protected setSignalByKey(key: string, signal: SharedSignal<any>) {
 		this.sharedSignalsByKey.set(key, signal);
+	}
+
+	protected protectFromGC(signal: SharedSignal<any>) {
+		// do nothing, since server doesn't handle GC at the moment
+	}
+
+	protected unprotectFromGC(signal: SharedSignal<any>) {
+		// do nothing, since server doesn't handle GC at the moment
 	}
 }

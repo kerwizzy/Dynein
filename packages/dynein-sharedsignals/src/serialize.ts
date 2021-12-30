@@ -222,7 +222,10 @@ export abstract class SharedStateEndpoint {
 			case "got":
 				const currentSignal = this.getSignalByKey(msg.key);
 				if (!currentSignal) {
-					console.warn("Got `set` to unknown signal");
+					if (msg.cmd === "got") {
+						return //ignore, probably GC'd
+					}
+					console.warn("Got `"+msg.cmd+"` to unknown signal: "+msg.key);
 					return;
 				}
 
@@ -231,7 +234,7 @@ export abstract class SharedStateEndpoint {
 						const deserialized = this.deserialize(msg.value);
 						currentSignal[updateFromRemoteSymbol](from, deserialized, msg.cmd === "set");
 					} else if (msg.cmd === "update") {
-						const target = currentSignal.sample();
+						const target = DyneinState.sample(currentSignal);
 						const args = this.deserialize(msg.args);
 						if (msg.method === "splice") {
 							target.splice(...args);
@@ -314,7 +317,7 @@ export abstract class SharedStateEndpoint {
 			return {
 				type: "sharedSignal",
 				key: value[keySymbol],
-				init: value.sample(),
+				init: DyneinState.sample(value),
 				updateOnEqual: value.sharedSignalUpdateOnEqual
 			} as Serialize<SharedSignal<any>> as any;
 		} else if (value instanceof SharedSet) {
@@ -394,6 +397,8 @@ export abstract class SharedStateEndpoint {
 
 	protected abstract getSignalByKey(key: string): SharedSignal<any> | undefined;
 	protected abstract setSignalByKey(key: string, value: SharedSignal<any>): void;
+	protected abstract protectFromGC(value: SharedSignal<any>): void
+	protected abstract unprotectFromGC(value: SharedSignal<any>): void
 
 	_makeOrGetSignal<T>(
 		key: string,
@@ -408,7 +413,7 @@ export abstract class SharedStateEndpoint {
 		let value = DyneinState.datavalue(init, updateOnEqual);
 
 		let updateRemoteUndebounced = () => {
-			const toSend = value.sample() as any;
+			const toSend = DyneinState.sample(value) as any;
 
 			this.broadcastUpdate(
 				{
@@ -440,20 +445,22 @@ export abstract class SharedStateEndpoint {
 		) as SharedSignal<T>;
 
 		//@ts-ignore
-		value.__sharedSignal = signal; // make garbage collection of `value` depend on GC of `signal`.
+		value.__sharedSignal = signal; // make GC of signal depend on GC of value.
 
 		let onSynced: ()=>void
-		const syncedPromise = new Promise<void>((resolve) => {
+		const syncedPromise = new Promise<SharedSignal<T>>((resolve) => {
 			onSynced = ()=>{
+				this.unprotectFromGC(signal)
 				synced(true);
-				resolve()
+				resolve(signal) // resolve with signal so syncedPromise refs signal and signal won't get GC'd if syncedPromise is used
 			}
 		})
 
 		signal[updateFromRemoteSymbol] = (from, newVal, isSetCmd) => {
+			onSynced()
+
 			if (!hasBeenSet || isSetCmd) {
 				hasBeenSet ||= isSetCmd
-				onSynced()
 				lastUpdateFrom = from;
 				value(newVal);
 				updateRemote()
@@ -469,13 +476,21 @@ export abstract class SharedStateEndpoint {
 		signal.sharedSignalUpdateOnEqual = updateOnEqual;
 
 		const synced = DyneinState.value(false);
-		//@ts-ignore
-		signal.synced = () => {
-			return synced();
-		};
+		Object.defineProperty(signal, "synced", {
+			get:() => {
+				this.protectFromGC(signal) // protect until synced
+				return () => {
+					return synced();
+				};
+			}
+		})
 
-		//@ts-ignore
-		signal.syncedPromise = syncedPromise
+		Object.defineProperty(signal, "syncedPromise", {
+			get:() => {
+				this.protectFromGC(signal) // protect until synced
+				return syncedPromise
+			}
+		})
 
 		this.setSignalByKey(key, signal);
 
@@ -520,7 +535,7 @@ class SharedArray<T extends Serializable> {
 	readonly value: SharedSignal<T[]>;
 
 	private get v() {
-		return this.value.sample();
+		return DyneinState.sample(this.value);
 	}
 
 	constructor(parent: SharedStateEndpoint, key: string, init: T[]) {
@@ -584,7 +599,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 	}
 
 	private get v() {
-		return this.value.sample();
+		return DyneinState.sample(this.value);
 	}
 
 	get(key: K): V | undefined {
@@ -592,7 +607,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 	}
 
 	set(key: K, value: V) {
-		this.value.sample().set(key, value);
+		DyneinState.sample(this.value).set(key, value);
 		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
@@ -609,7 +624,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 	}
 
 	delete(key: K) {
-		this.value.sample().delete(key);
+		DyneinState.sample(this.value).delete(key);
 		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
@@ -639,14 +654,14 @@ class SharedSet<T extends UniqueSerializable> {
 	}
 
 	private get v() {
-		return this.value.sample();
+		return DyneinState.sample(this.value);
 	}
 
 	add(entry: T) {
 		if (this.has(entry)) {
 			return;
 		}
-		this.value.sample().add(entry);
+		DyneinState.sample(this.value).add(entry);
 		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({
@@ -666,7 +681,7 @@ class SharedSet<T extends UniqueSerializable> {
 		if (!this.has(entry)) {
 			return;
 		}
-		this.value.sample().delete(entry);
+		DyneinState.sample(this.value).delete(entry);
 		this.value[localSignalSymbol](this.v);
 		//@ts-ignore
 		this.parent.broadcastUpdate({

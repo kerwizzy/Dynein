@@ -4,10 +4,10 @@ export default abstract class WatchedValue<U> {
 	abstract value: DataSignal<U>;
 
 	protected get v() {
-		return this.value.sample();
+		return DyneinState.sample(this.value);
 	}
 
 	protected fire() {
-		this.value(this.value.sample());
+		this.value(DyneinState.sample(this.value));
 	}
 }

@@ -516,6 +516,47 @@ describe("D.dom", ()=>{
 			signal(true)
 			assert.strictEqual(count, 2)
 		})
+
+		it("updates in a single tick", ()=>{
+			const signal = D.state.value(1)
+			const document = mount(()=>{
+				D.dom.if(()=>signal(), ()=>{
+					D.dom.replacer(()=>{
+						if (!signal()) {
+							throw new Error("Got falsy in truthy D.dom.if branch")
+						}
+					})
+				})
+			})
+
+			assert.doesNotThrow(()=>{
+				signal(0)
+			})
+		})
+
+		it("updates in a single tick (2)", ()=>{
+			const url = D.state.value("abc")
+
+			const document = mount(()=>{
+				D.dom.if(()=>false, ()=>{
+
+				}).elseif(()=>url() === "xyz", ()=>{
+
+				}).elseif(()=>/abc/.test(url()), ()=>{
+					D.dom.replacer(()=>{
+						if (!/abc/.exec(url())) {
+							throw new Error("Got wrong state in branch")
+						}
+					})
+				})
+			})
+
+			assert.doesNotThrow(()=>{
+				D.state.batch(()=>{
+					url("xyz")
+				})
+			})
+		})
 	})
 
 	describe("D.dom.replacer", ()=>{
@@ -553,6 +594,78 @@ describe("D.dom", ()=>{
 				})
 			})
 		})
+
+		// parallel to the D.dom.if test case
+		it("updates in a single tick", ()=>{
+			const signal = D.state.value(1)
+			const document = mount(()=>{
+				D.dom.replacer(()=>{
+					if (signal()) {
+						D.dom.replacer(()=>{
+							if (!signal()) {
+								throw new Error("Got falsy in truthy D.dom.if branch")
+							}
+						})
+					}
+				})
+			})
+
+			assert.doesNotThrow(()=>{
+				signal(0)
+			})
+		})
 	})
+
+	describe("D.dom.async", ()=>{
+		it("creates", ()=>{
+			const document = mount(()=>{
+				D.dom.async(($r)=>{
+					$r(()=>{
+						D.dom.elements.div()
+					})
+				})
+			})
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
+		})
+
+		it("replaces", ()=>{
+			const document = mount(()=>{
+				D.dom.async(($r)=>{
+					$r(()=>{
+						D.dom.elements.div()
+					})
+					$r(()=>{
+						D.dom.elements.span()
+					})
+				})
+			})
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<span></span>`)
+		})
+
+		it("destroys previous subcontexts", ()=>{
+			const signal = D.state.data(true)
+			let count = 0
+			const document = mount(()=>{
+				D.dom.async(($r)=>{
+					$r(()=>{
+						D.state.watch(()=>{
+							signal()
+							count++
+						})
+						D.dom.elements.div()
+					})
+					assert.strictEqual(count, 1, "init")
+					signal(true)
+					assert.strictEqual(count, 2, "update after watcher active")
+					$r(()=>{
+						D.dom.elements.span()
+					})
+					signal(true)
+					assert.strictEqual(count, 2, "update after watcher should be destroyed")
+				})
+			})
+		})
+	})
+
 })
 

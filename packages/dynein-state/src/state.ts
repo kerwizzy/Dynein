@@ -71,7 +71,7 @@ class DestructionContext implements Destructable {
 	}
 }
 
-export type { DestructionContext };
+export { DestructionContext };
 
 let currentContext:
 	| DestructionContext
@@ -87,11 +87,11 @@ function addToContext(child: Destructable) {
 	}
 }
 
-function setContext(ctx: DestructionContext | null | undefined, inner: () => void) {
+function setContext<T>(ctx: DestructionContext | null | undefined, inner: () => T) {
 	const oldCtx = currentContext;
 	currentContext = ctx;
 	try {
-		inner();
+		return inner();
 	} finally {
 		currentContext = oldCtx;
 	}
@@ -143,8 +143,13 @@ const DyneinState = {
 		return () => internalSignal();
 	},
 
-	root(fn: () => void) {
-		setContext(null, fn);
+	root(fn: () => void): DestructionContext {
+		let ctx: DestructionContext
+		setContext(null, ()=>{
+			ctx = new DestructionContext()
+			setContext(ctx, fn)
+		})
+		return ctx!
 	},
 
 	setContext,
@@ -226,10 +231,12 @@ export interface DataSignal<T> {
 }
 
 function makeSignalFromHandler<T>(handler: DataSignalDependencyHandler<T>, updateOnEqual: boolean) {
-	return DyneinState.makeSignal(
+	const signal = DyneinState.makeSignal(
 		() => handler.read(),
 		(val) => handler.write(val, updateOnEqual)
 	);
+	handler.dependents.add(signal) //needed to make GC of signal not run when it shouldn't
+	return signal
 }
 
 // Necessary since console isn't part of the default Typescript defs, and I don't want to include
@@ -387,11 +394,11 @@ function findParentComputation(c: typeof currentContext): Computation | undefine
 abstract class DataSignalDependencyHandler<T> {
 	abstract value: T;
 	drains: Set<Computation>;
-	lastUpdatedTick: number;
+
+	dependents: Set<any> = new Set() //for GC stuff
 
 	constructor() {
 		this.drains = new Set();
-		this.lastUpdatedTick = -1;
 	}
 
 	read(): T {

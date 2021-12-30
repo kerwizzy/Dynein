@@ -269,13 +269,17 @@ function createAndInsertElement<
 	}
 
 	//special case to init selects properly. has to be done after options list added
-	if (namespace === "xhtml" && tagName === "select" && attrs && "value" in attrs) {
-		const val = attrs.value
-		if (typeof val === "function") {
-			const rawVal = DyneinState.sample(val) ?? ""
-			setAttrOrProp(el, "value", rawVal);
-		} else {
-			setAttrOrProp(el, "value", (val as any) ?? "")
+	const specialSelectAttrs = ["value", "selectedIndex"]
+	for (const attr of specialSelectAttrs) {
+		if (namespace === "xhtml" && tagName === "select" && attrs && attr in attrs) {
+			//@ts-ignore
+			const val = attrs[attr]
+			if (typeof val === "function") {
+				const rawVal = DyneinState.sample(val) ?? ""
+				setAttrOrProp(el, attr, rawVal);
+			} else {
+				setAttrOrProp(el, attr, (val as any) ?? "")
+			}
 		}
 	}
 
@@ -390,7 +394,15 @@ const DyneinDOM = {
 			insertNode(document.createComment("</async>")),
 			($r) => {
 				const saved = DyneinState.getContext()
-				setupReplacements($r, (inner)=>{
+				const ctx = new DyneinState.DestructionContext()
+				setupReplacements((inner) => {
+					ctx.reset()
+					ctx.resume(()=>{
+						DyneinState.expectStatic(()=>{
+							$r(inner)
+						})
+					})
+				}, (inner: () => void)=>{
 					DyneinState.setContext(saved, inner)
 				});
 			}
@@ -431,26 +443,21 @@ const DyneinDOM = {
 
 		addStage(ifCond, inner);
 
-		const currentInner = DyneinState.value(()=>{})
-
-		DyneinState.watch(()=>{
-			for (let i = 0; i < nConds(); i++) {
-				if (conds[i]()) {
-					currentInner(inners[i])
-					return;
+		DyneinDOM.async(($r)=>{
+			let oldI = -1
+			DyneinState.watch(()=>{
+				for (let i = 0; i < nConds(); i++) {
+					if (conds[i]()) {
+						if (oldI !== i) {
+							oldI = i
+							$r(inners[i])
+						}
+						return;
+					}
 				}
-			}
-			currentInner(()=>{})
-		});
-
-		const saved = DyneinState.getContext()
-		DyneinDOM.replacer(() => {
-			const inner = currentInner()
-			DyneinState.setContext(saved, ()=>{
-				DyneinState.expectStatic(()=>{
-					inner()
-				})
-			})
+				oldI = -1
+				$r(()=>{})
+			});
 		})
 
 		return ifStageMaker;
