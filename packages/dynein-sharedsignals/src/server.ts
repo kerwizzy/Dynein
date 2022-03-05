@@ -73,7 +73,7 @@ interface ServerParams<T> {
 }
 
 export class SharedStateServer<T> extends SharedStateEndpoint {
-	private clients: Map<string, Client<T>> = new Map();
+	readonly clients: Map<string, Client<T>> = new Map();
 	private subscriptions: Map<string, Set<Client<T>>> = new Map();
 	private specialGetters: Record<string, (client: Client<T>) => any>;
 	protected debounceInterval = 0;

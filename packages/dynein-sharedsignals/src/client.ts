@@ -41,7 +41,7 @@ export class SharedStateClient extends SharedStateEndpoint {
 
 	protected debounceInterval = 50;
 
-	protected uuid(): string {
+	uuid(): string {
 		return this.params.uuid();
 	}
 
@@ -152,6 +152,10 @@ export class SharedStateClient extends SharedStateEndpoint {
 			this.send({ cmd: "get", key, init: this.serialize(DyneinState.sample(result.signal) as any), updateOnEqual });
 		}
 		return result;
+	}
+
+	forceRefresh(signal: SharedSignal<any>) {
+		this.send({ cmd: "get", key: signal.key, init: this.serialize(DyneinState.sample(signal) as any), updateOnEqual: signal.sharedSignalUpdateOnEqual });
 	}
 
 	private rpcIDCounter = 0;

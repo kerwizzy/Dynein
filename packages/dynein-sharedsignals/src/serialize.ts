@@ -26,14 +26,17 @@ export type SerializedSharedSignal<T> = {
 export type SerializedSharedArray = {
 	type: "sharedArr";
 	key: string;
+	value: SerializedSharedSignal<any>
 };
 export type SerializedSharedSet = {
 	type: "sharedSet";
 	key: string;
+	value: SerializedSharedSignal<any>
 };
 export type SerializedSharedMap = {
 	type: "sharedMap";
 	key: string;
+	value: SerializedSharedSignal<any>
 };
 
 export type SerializedCustomValue = {
@@ -165,12 +168,11 @@ export type ServerOrClientMessage = SetMessage | GotMessage | UpdateMessage;
 
 const sharedSignalSymbol = Symbol("isSharedSignal");
 const localSignalSymbol = Symbol("setLocal");
-const keySymbol = Symbol("sharedSignalKeySymbol");
 const updateFromRemoteSymbol = Symbol("updateSymbol");
 export interface SharedSignal<T> extends DataSignal<T> {
 	readonly synced: () => boolean;
 	readonly syncedPromise: Promise<void>
-	[keySymbol]: string;
+	readonly key: string;
 	[localSignalSymbol]: (val: T) => void;
 	[sharedSignalSymbol]: true;
 	[updateFromRemoteSymbol]: (from: string, val: T, isSetCmd: boolean) => void;
@@ -208,12 +210,22 @@ function assertUnreachable(x: never): never {
 	throw new Error("Unexpected state");
 }
 
+type SpliceListener<T> = (start: number, deleteCount: number, added: T[], removed: T[])=>void
+
 export abstract class SharedStateEndpoint {
-	protected abstract uuid(): string;
+	abstract uuid(): string;
 	protected abstract debounceInterval: number;
 
 	protected customSerializers: Map<(thing: any) => boolean, CustomSerializer<any>> = new Map();
 	protected customDeserializers: Map<string, CustomSerializer<any>> = new Map();
+
+	// This has to be keyed by the signal and handled in this class (not in SharedArray as one might
+	// expect) because only the signal is dereferenced below in handleMessage, not the SharedArray.
+	// A further problem with putting these listeners in SharedArray is that only SharedSignal objects are deserialized
+	// properly to an existing version. So, for instance, if two copies of a serialized SharedArray based on the
+	// same signal are deserialized, they will be deserialized as two *DIFFERENT* SharedArray objects,
+	// because there is no cache by key of SharedArray objects as there is for SharedSignals.
+	protected onSpliceListeners: Map<SharedSignal<any[]>, Set<SpliceListener<any>>> = new Map()
 
 	protected handleMessage(from: string, msg: ServerOrClientMessage) {
 		switch (msg.cmd) {
@@ -237,7 +249,8 @@ export abstract class SharedStateEndpoint {
 						const target = DyneinState.sample(currentSignal);
 						const args = this.deserialize(msg.args);
 						if (msg.method === "splice") {
-							target.splice(...args);
+							const removed = target.splice(...args);
+							this.onSplice(currentSignal, args[0], args[1], args.slice(2), removed)
 						} else if (msg.method === "add") {
 							target.add(...msg.args);
 						} else if (msg.method === "set") {
@@ -259,6 +272,32 @@ export abstract class SharedStateEndpoint {
 		}
 	}
 
+	protected onSplice<T>(signal: SharedSignal<T[]>, start: number, deleteCount: number, added: T[], removed: T[]) {
+		if (!this.onSpliceListeners.has(signal)) {
+			return
+		}
+		for (const listener of this.onSpliceListeners.get(signal)!) {
+			listener(start, deleteCount, added, removed)
+		}
+	}
+
+	addSpliceListener<T>(signal: SharedSignal<T[]>, listener: SpliceListener<T>) {
+		if (!this.onSpliceListeners.has(signal)) {
+			this.onSpliceListeners.set(signal, new Set())
+		}
+		this.onSpliceListeners.get(signal)!.add(listener)
+	}
+
+	removeSpliceListener<T>(signal: SharedSignal<T[]>, listener: SpliceListener<T>) {
+		if (!this.onSpliceListeners.has(signal)) {
+			return
+		}
+		this.onSpliceListeners.get(signal)!.delete(listener)
+		if (this.onSpliceListeners.get(signal)!.size === 0) {
+			this.onSpliceListeners.delete(signal)
+		}
+	}
+
 	protected abstract broadcastUpdate(
 		msg: SetMessage | UpdateMessage,
 		blockSendTo?: string | undefined
@@ -272,7 +311,7 @@ export abstract class SharedStateEndpoint {
 		this.customDeserializers.set(serializer.name, serializer);
 	}
 
-	serialize<T extends Serializable>(value: T): Serialize<T> {
+	serialize<T>(value: T): Serialize<T> {
 		if (
 			value === null ||
 			value === undefined ||
@@ -281,7 +320,7 @@ export abstract class SharedStateEndpoint {
 			typeof value === "string" ||
 			typeof value === "bigint"
 		) {
-			return value as Serialize<Primitive> as any;
+			return value as any
 		} else if (value instanceof Date) {
 			return {
 				type: "date",
@@ -316,16 +355,20 @@ export abstract class SharedStateEndpoint {
 		} else if (isSharedSignal(value)) {
 			return {
 				type: "sharedSignal",
-				key: value[keySymbol],
-				init: DyneinState.sample(value),
+				key: value.key,
+				init: this.serialize(DyneinState.sample(value)),
 				updateOnEqual: value.sharedSignalUpdateOnEqual
 			} as Serialize<SharedSignal<any>> as any;
+		} else if (value instanceof SharedArray) {
+			return { type: "sharedArr", key: value.value.key, value:this.serialize(value.value) } as Serialize<
+				SharedArray<any>
+			> as any;
 		} else if (value instanceof SharedSet) {
-			return { type: "sharedSet", key: value.value[keySymbol] } as Serialize<
+			return { type: "sharedSet", key: value.value.key, value:this.serialize(value.value) } as Serialize<
 				SharedSet<any>
 			> as any;
 		} else if (value instanceof SharedMap) {
-			return { type: "sharedMap", key: value.value[keySymbol] } as Serialize<
+			return { type: "sharedMap", key: value.value.key, value:this.serialize(value.value) } as Serialize<
 				SharedMap<any, any>
 			> as any;
 		} else {
@@ -377,13 +420,13 @@ export abstract class SharedStateEndpoint {
 			}
 			return out;
 		} else if (value.type === "sharedSignal") {
-			return this._makeOrGetSignal(value.key, value.init, value.updateOnEqual);
+			return this._makeOrGetSignal(value.key, this.deserialize(value.init), value.updateOnEqual).signal;
 		} else if (value.type === "sharedArr") {
-			return this.sharedArray(value.key);
+			return new SharedArray(this, this.deserialize(value.value))
 		} else if (value.type === "sharedSet") {
-			return this.sharedSet(value.key);
+			return new SharedSet(this, this.deserialize(value.value))
 		} else if (value.type === "sharedMap") {
-			return this.sharedMap(value.key);
+			return new SharedMap(this, this.deserialize(value.value))
 		} else if (value.type === "custom") {
 			if (this.customDeserializers.has(value.name)) {
 				const serializer = this.customDeserializers.get(value.name)!;
@@ -391,6 +434,7 @@ export abstract class SharedStateEndpoint {
 			}
 			throw new Error("Missing deserializer for custom type " + value.name);
 		} else {
+			console.log("can't deserialize",value)
 			throw new Error("Can't deserialize.");
 		}
 	}
@@ -467,7 +511,8 @@ export abstract class SharedStateEndpoint {
 			}
 		};
 
-		signal[keySymbol] = key;
+		//@ts-ignore
+		signal.key = key;
 
 		signal[localSignalSymbol] = value;
 		signal[sharedSignalSymbol] = true;
@@ -497,7 +542,7 @@ export abstract class SharedStateEndpoint {
 		return { cached: false, signal };
 	}
 
-	signal<T extends Serializable>(
+	signal<T>(
 		init: T,
 		key?: string,
 		updateOnEqual: boolean = false
@@ -511,26 +556,38 @@ export abstract class SharedStateEndpoint {
 		return this._makeOrGetSignal(key, init, updateOnEqual).signal;
 	}
 
-	sharedArray<T extends Serializable>(init: T[] = [], key?: string): SharedArray<T> {
+	sharedArray<T>(init: SharedSignal<T[]> | Iterable<T> = [], key?: string): SharedArray<T> {
 		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return new SharedArray(this, key, init);
+		if (isSharedSignal(init)) {
+			return new SharedArray(this, init)
+		} else {
+			return new SharedArray(this, this._makeOrGetSignal(key, Array.from(init as Iterable<T>), true).signal);
+		}
 	}
 
-	sharedSet<T extends UniqueSerializable>(init: T[] = [], key?: string): SharedSet<T> {
+	sharedSet<T extends UniqueSerializable>(init: SharedSignal<Set<T>> | Iterable<T>, key?: string): SharedSet<T> {
 		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return new SharedSet(this, key, init);
+		if (isSharedSignal(init)) {
+			return new SharedSet(this, init)
+		} else {
+			return new SharedSet(this, this._makeOrGetSignal(key, new Set(init as Iterable<T>), true).signal);
+		}
 	}
 
-	sharedMap<K extends UniqueSerializable, V extends Serializable>(
-		init: [K, V][] = [],
+	sharedMap<K extends UniqueSerializable, V>(
+		init: SharedSignal<Map<K, V>> | [K, V][] = [],
 		key?: string
 	): SharedMap<K, V> {
 		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return new SharedMap(this, key, init);
+		if (isSharedSignal(init)) {
+			return new SharedMap(this, init)
+		} else {
+			return new SharedMap(this, this._makeOrGetSignal(key, new Map(init as [K, V][]), true).signal);
+		}
 	}
 }
 
-class SharedArray<T extends Serializable> {
+class SharedArray<T> {
 	private readonly parent: SharedStateEndpoint;
 	readonly value: SharedSignal<T[]>;
 
@@ -538,9 +595,9 @@ class SharedArray<T extends Serializable> {
 		return DyneinState.sample(this.value);
 	}
 
-	constructor(parent: SharedStateEndpoint, key: string, init: T[]) {
+	constructor(parent: SharedStateEndpoint, value: SharedSignal<T[]>) {
 		this.parent = parent;
-		this.value = this.parent._makeOrGetSignal(key, init, true).signal;
+		this.value = value
 	}
 
 	includes(searchElement: T, fromIndex?: number | undefined): boolean {
@@ -556,18 +613,29 @@ class SharedArray<T extends Serializable> {
 		return this.value().map(callbackfn, thisArg);
 	}
 
+	// See above for why these are fundamentally methods on the SharedStateEndpoint not on SharedArray
+	addSpliceListener(listener: SpliceListener<T>) {
+		this.parent.addSpliceListener(this.value, listener)
+	}
+
+	removeSpliceListener(listener: SpliceListener<T>) {
+		this.parent.removeSpliceListener(this.value, listener)
+	}
+
 	splice(start: number, deleteCount: number, ...items: T[]) {
-		const out = this.v.splice(start, deleteCount, ...items);
+		const removed = this.v.splice(start, deleteCount, ...items);
 		this.value[localSignalSymbol](this.v);
+		//@ts-ignore
+		this.parent.onSplice(this.value, start, deleteCount, items, removed)
 
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "splice",
-			key: this.value[keySymbol],
+			key: this.value.key,
 			args: this.parent.serialize([start, deleteCount, ...items])
 		});
-		return out;
+		return removed;
 	}
 
 	push(...items: T[]) {
@@ -589,13 +657,13 @@ class SharedArray<T extends Serializable> {
 	}
 }
 
-class SharedMap<K extends UniqueSerializable, V extends Serializable> {
+class SharedMap<K extends UniqueSerializable, V> {
 	private readonly parent: SharedStateEndpoint;
 	readonly value: SharedSignal<Map<K, V>>;
 
-	constructor(parent: SharedStateEndpoint, key: string, init: [K, V][] = []) {
+	constructor(parent: SharedStateEndpoint, value: SharedSignal<Map<K, V>>) {
 		this.parent = parent;
-		this.value = this.parent._makeOrGetSignal(key, new Map(init), true).signal;
+		this.value = value
 	}
 
 	private get v() {
@@ -613,7 +681,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "set",
-			key: this.value[keySymbol],
+			key: this.value.key,
 			args: this.parent.serialize([key, value])
 		});
 		return this;
@@ -630,7 +698,7 @@ class SharedMap<K extends UniqueSerializable, V extends Serializable> {
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "delete",
-			key: this.value[keySymbol],
+			key: this.value.key,
 			args: this.parent.serialize([key])
 		});
 	}
@@ -648,9 +716,9 @@ class SharedSet<T extends UniqueSerializable> {
 	private readonly parent: SharedStateEndpoint;
 	readonly value: SharedSignal<Set<T>>;
 
-	constructor(parent: SharedStateEndpoint, key: string, init: T[] = []) {
-		this.parent = parent;
-		this.value = this.parent._makeOrGetSignal(key, new Set(init), true).signal;
+	constructor(parent: SharedStateEndpoint, value: SharedSignal<Set<T>>) {
+		this.parent = parent
+		this.value = value
 	}
 
 	private get v() {
@@ -667,7 +735,7 @@ class SharedSet<T extends UniqueSerializable> {
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "add",
-			key: this.value[keySymbol],
+			key: this.value.key,
 			args: this.parent.serialize([entry])
 		});
 		return this;
@@ -687,7 +755,7 @@ class SharedSet<T extends UniqueSerializable> {
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "delete",
-			key: this.value[keySymbol],
+			key: this.value.key,
 			args: this.parent.serialize([entry])
 		});
 	}
