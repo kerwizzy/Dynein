@@ -1,5 +1,5 @@
 {
-	"extends": "../../tsconfig.json",
+	"extends": "../../baseconfig.json",
 	"compilerOptions": {
 		"outDir": "./built"
 	}
