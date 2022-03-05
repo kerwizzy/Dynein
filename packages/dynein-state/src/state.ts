@@ -1,3 +1,4 @@
+const DEBUG = false
 const dataSignalSymbol = Symbol("dataSignalSymbol");
 
 // Internal state variables
@@ -30,25 +31,38 @@ export interface Destructable {
 	parent: DestructionContext | undefined;
 }
 
+let debugIDCounter = 0
 // A simple tree for destroying all descendant contexts when an ancestor is destroyed
 class DestructionContext implements Destructable {
+	debugID: string
 	protected children: Set<Destructable> = new Set();
 	protected destroyed: boolean = false;
 	parent: DestructionContext | undefined = undefined;
 
 	constructor() {
+
+		this.debugID = (debugIDCounter++).toString()
+		if (DEBUG) {
+			console.trace(`DestructionContext@${this.debugID}: create`)
+		}
 		addToContext(this);
 	}
 
 	addChild(thing: Destructable) {
+		if (DEBUG) {
+			console.log(`DestructionContext@${this.debugID}: add child`, thing)
+		}
 		if (this.destroyed) {
-			throw new Error("Can't add to destroyed context.");
+			throw new Error(`DestructionContext@${this.debugID}: Can't add to destroyed context.`);
 		}
 		thing.parent = this;
 		this.children.add(thing);
 	}
 
 	destroy() {
+		if (DEBUG) {
+			console.log(`DestructionContext@${this.debugID}: destroy`)
+		}
 		this.destroyed = true;
 		if (this.parent) {
 			this.parent.children.delete(this)
@@ -58,6 +72,9 @@ class DestructionContext implements Destructable {
 	}
 
 	reset() {
+		if (DEBUG) {
+			console.log(`DestructionContext@${this.debugID}: reset`)
+		}
 		for (const child of this.children) {
 			child.parent = undefined;
 			child.destroy();
@@ -90,9 +107,15 @@ function addToContext(child: Destructable) {
 function setContext<T>(ctx: DestructionContext | null | undefined, inner: () => T) {
 	const oldCtx = currentContext;
 	currentContext = ctx;
+	if (DEBUG) {
+		console.log(`Enter context @${ctx?.debugID ?? ctx}`)
+	}
 	try {
 		return inner();
 	} finally {
+		if (DEBUG) {
+			console.log(`Leave context @${ctx?.debugID ?? ctx}`)
+		}
 		currentContext = oldCtx;
 	}
 }
@@ -135,8 +158,8 @@ const DyneinState = {
 		});
 	},
 
-	memo<T>(fn: () => T): () => T {
-		const internalSignal = DyneinState.value<T>(undefined as unknown as T);
+	memo<T>(fn: () => T, updateOnEqual = false): () => T {
+		const internalSignal = DyneinState.datavalue<T>(undefined as unknown as T, updateOnEqual);
 		DyneinState.watch(() => {
 			internalSignal(fn());
 		});
@@ -351,6 +374,8 @@ class Computation extends DestructionContext {
 	private fn: () => void;
 	private sources: Set<DataSignalDependencyHandler<any>>;
 	boundExec: () => void;
+	private executing: boolean = false
+	private pendingDestroy: boolean = false
 
 	constructor(fn: () => void) {
 		super();
@@ -369,13 +394,29 @@ class Computation extends DestructionContext {
 		}
 
 		this.removeSources()
-		setContext(this, () => {
-			setIgnored(false, warnOnNoDepAdd, this.fn);
-		});
+		try {
+			this.executing = true
+			setContext(this, () => {
+				setIgnored(false, warnOnNoDepAdd, this.fn);
+			});
+		} finally {
+			this.executing = false
+			if (this.pendingDestroy) {
+				this.destroy()
+			}
+		}
+	}
+
+	destroy() {
+		if (this.executing) {
+			this.pendingDestroy = true
+		} else {
+			super.destroy()
+		}
 	}
 
 	schedule() {
-		this.reset() // Destroy subwatchers, since don't need to reexecute
+		this.reset() // Destroy subwatchers
 		updateQueue.schedule(this, this.boundExec);
 	}
 

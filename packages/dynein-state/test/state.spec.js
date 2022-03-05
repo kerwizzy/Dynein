@@ -2,6 +2,51 @@ import { default as DyneinState, getInternalState } from "../built/state.js";
 
 const D = { state: DyneinState };
 
+function serializer(target, load, store) {
+	const silencedData = silenceEcho(target)
+
+	D.state.watch(()=>{
+		const data = silencedData()
+		D.state.batch(()=>{
+			D.state.ignore(()=>{
+				load(data)
+			})
+		})
+
+		let firstTime = true
+		D.state.watch(()=>{
+			const out = store()
+			if (!firstTime) {
+				silencedData(out)
+			}
+			firstTime = false
+		})
+	})
+}
+
+function silenceEcho(signal) {
+	const fire = D.state.data(true)
+
+	let updateFromHere = false
+	D.state.watch(()=>{
+		signal()
+		if (!updateFromHere) {
+			fire(true)
+		}
+	})
+
+	return D.state.makeSignal(()=>{
+		fire()
+		return D.state.sample(signal)
+	}, (val)=>{
+		updateFromHere = true
+		D.state.subclock(()=>{
+			signal(val)
+		})
+		updateFromHere = false
+	})
+}
+
 describe("D.state", () => {
 	describe("D.state.value", () => {
 		it("disallows multiple arguments to set", () => {
@@ -200,6 +245,33 @@ describe("D.state", () => {
 			assert.strictEqual(outerCount, 2);
 			assert.strictEqual(innerCount, 2);
 		});
+
+		it("handles destruction of parent within child", ()=>{
+			let order = "";
+			const a = D.state.value("")
+			D.state.root(() => {
+				D.state.watch(()=>{
+					order += "outer{"
+					const b = D.state.value("")
+					D.state.watch(()=>{
+						order += "inner{"
+						b(a())
+
+						D.state.watch(()=>{
+
+						})
+						order += "}inner "
+					})
+					b()
+					order += "}outer "
+				})
+			})
+			order = ""
+			assert.doesNotThrow(()=>{
+				a("a")
+			})
+			assert.strictEqual(order, "inner{}inner outer{inner{}inner }outer ")
+		})
 
 		it("calls cleanup", () => {
 			let innerWatch = D.state.value(true);
@@ -689,10 +761,12 @@ describe("D.state", () => {
 			});
 			order = "";
 			D.state.batch(() => {
+				order += "set b "
 				b(true);
+				order += "set a "
 				a(true);
 			});
-			assert.strictEqual(order, "outer ");
+			assert.strictEqual(order, "set b set a outer ");
 		});
 	});
 
