@@ -16,8 +16,6 @@
 	"./packages/dynein-signalarray",
 	"./packages/dynein-dom",
 	"./packages/dynein-hyperfor",
-	"./packages/dynein-sharedsignals",
-	"./packages/dynein-kroma",
 	"./packages/dynein"
   ],
   "devDependencies": {
