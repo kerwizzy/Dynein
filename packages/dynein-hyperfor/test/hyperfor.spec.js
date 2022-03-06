@@ -1,4 +1,4 @@
-import Hyperfor from "@dynein/hyperfor"
+import hyperfor from "@dynein/hyperfor"
 import { default as D } from "dynein"
 
 function mount(inner) {
@@ -37,7 +37,7 @@ describe("hyperfor", ()=>{
 
 	it("create elements", ()=>{
 		const document = mount(()=>{
-			new Hyperfor([1,2,3], (item) => {
+			hyperfor([1,2,3], (item) => {
 				D.dom.text(item)
 			})
 		})
@@ -46,7 +46,7 @@ describe("hyperfor", ()=>{
 
 	it("splices elements in the middle", ()=>{
 		const document = mount(()=>{
-			const h4 = new Hyperfor([1,2,3,4], (item) => {
+			const h4 = hyperfor([1,2,3,4], (item) => {
 				D.dom.text(item)
 			})
 			h4.splice(1,2,"a","b")
@@ -57,7 +57,7 @@ describe("hyperfor", ()=>{
 
 	it("handles .startItem changing", ()=>{
 		const document = mount(()=>{
-			const h4 = new Hyperfor([1,2,3,4], (item) => {
+			const h4 = hyperfor([1,2,3,4], (item) => {
 				D.dom.text(item)
 			})
 			h4.splice(0,1)

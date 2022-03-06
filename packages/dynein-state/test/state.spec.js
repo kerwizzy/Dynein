@@ -1,20 +1,20 @@
-import { default as DyneinState, getInternalState } from "../built/state.js";
+import { createSignal, toSignal, createEffect, createMemo, createRoot, onCleanup, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState } from "../built/state.js";
 
-const D = { state: DyneinState };
+
 
 function serializer(target, load, store) {
 	const silencedData = silenceEcho(target)
 
-	D.state.watch(()=>{
+	createEffect(()=>{
 		const data = silencedData()
-		D.state.batch(()=>{
-			D.state.ignore(()=>{
+		batch(()=>{
+			untrack(()=>{
 				load(data)
 			})
 		})
 
 		let firstTime = true
-		D.state.watch(()=>{
+		createEffect(()=>{
 			const out = store()
 			if (!firstTime) {
 				silencedData(out)
@@ -25,84 +25,84 @@ function serializer(target, load, store) {
 }
 
 function silenceEcho(signal) {
-	const fire = D.state.data(true)
+	const fire = createSignal(true, true)
 
 	let updateFromHere = false
-	D.state.watch(()=>{
+	createEffect(()=>{
 		signal()
 		if (!updateFromHere) {
 			fire(true)
 		}
 	})
 
-	return D.state.makeSignal(()=>{
+	return toSignal(()=>{
 		fire()
-		return D.state.sample(signal)
+		return sample(signal)
 	}, (val)=>{
 		updateFromHere = true
-		D.state.subclock(()=>{
+		subclock(()=>{
 			signal(val)
 		})
 		updateFromHere = false
 	})
 }
 
-describe("D.state", () => {
-	describe("D.state.value", () => {
+describe("@dynein/state", () => {
+	describe("createSignal", () => {
 		it("disallows multiple arguments to set", () => {
-			const signal = D.state.value(1);
+			const signal = createSignal(1);
 			assert.throws(() => signal(2, 3, 4));
 		});
 
 		it("returns the initial value", () => {
-			assert.strictEqual(D.state.value(1)(), 1);
+			assert.strictEqual(createSignal(1)(), 1);
 		});
 
 		it("sets the value", () => {
-			const signal = D.state.value(1);
+			const signal = createSignal(1);
 			signal(2);
 			assert.strictEqual(signal(), 2);
 		});
 
 		it("sets the value for sample", () => {
-			const signal = D.state.value(1);
+			const signal = createSignal(1);
 			signal(2);
-			assert.strictEqual(D.state.sample(signal), 2);
+			assert.strictEqual(sample(signal), 2);
 		});
 	});
 
-	describe("D.state.root", () => {
+	describe("createRoot", () => {
 		it("passes errors", () => {
 			assert.throws(() => {
-				D.state.root(() => {
+				createRoot(() => {
 					throw new Error("err");
 				});
 			});
 		});
 
 		it("restores current computation after throw", () => {
-			const before = getInternalState().currentContext;
+			const before = _getInternalState().currentOwnerScope;
 			try {
-				D.state.root(() => {
+				createRoot(() => {
 					throw new Error("err");
 				});
 			} catch (err) {}
-			assert.strictEqual(getInternalState().currentContext, before);
+			assert.strictEqual(_getInternalState().currentOwnerScope, before);
 		});
 	});
 
-	describe("D.state.watch", () => {
+	describe("createEffect", () => {
 		it("disallows 0 arguments", () => {
-			D.state.root(() => {
-				assert.throws(() => D.state.watch());
+			createRoot(() => {
+				assert.throws(() => createEffect());
 			});
 		});
 
 		it("creates a watcher", () => {
-			D.state.root(() => {
+			createRoot(() => {
 				assert.doesNotThrow(() => {
-					const signal = D.state.value(0);
-					D.state.watch(() => {
+					const signal = createSignal(0);
+					createEffect(() => {
 						signal();
 					});
 				});
@@ -110,10 +110,10 @@ describe("D.state", () => {
 		});
 
 		it("reexecutes on dependency update", () => {
-			const signal = D.state.value(0);
+			const signal = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					signal();
 				});
@@ -124,11 +124,11 @@ describe("D.state", () => {
 		});
 
 		it("reexecutes for each dependency update", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0);
+			const a = createSignal(0);
+			const b = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					a();
 					b();
@@ -142,10 +142,10 @@ describe("D.state", () => {
 		});
 
 		it("does not reexecute on equal value update", () => {
-			const signal = D.state.value(0);
+			const signal = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					signal();
 				});
@@ -156,10 +156,10 @@ describe("D.state", () => {
 		});
 
 		it("does reexecute on equal data update", () => {
-			const signal = D.state.data(0);
+			const signal = createSignal(0, true);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					signal();
 				});
@@ -170,12 +170,12 @@ describe("D.state", () => {
 		});
 
 		it("resets dependencies on recompute", () => {
-			let phase = D.state.value(false);
-			const a = D.state.value(0);
-			const b = D.state.value(0);
+			let phase = createSignal(false);
+			const a = createSignal(0);
+			const b = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					if (!phase()) {
 						a();
@@ -198,13 +198,13 @@ describe("D.state", () => {
 		});
 
 		it("encapsulates dependencies", () => {
-			let signal = D.state.value(0);
+			let signal = createSignal(0);
 			let outerCount = 0;
 			let innerCount = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					outerCount++;
-					D.state.watch(() => {
+					createEffect(() => {
 						innerCount++;
 						signal();
 					});
@@ -218,15 +218,15 @@ describe("D.state", () => {
 		});
 
 		it("destroys subwatchers on recompute", () => {
-			let innerWatch = D.state.value(true);
-			let signal = D.state.value(0);
+			let innerWatch = createSignal(true);
+			let signal = createSignal(0);
 			let outerCount = 0;
 			let innerCount = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					outerCount++;
 					if (innerWatch()) {
-						D.state.watch(() => {
+						createEffect(() => {
 							innerCount++;
 							signal();
 						});
@@ -248,16 +248,16 @@ describe("D.state", () => {
 
 		it("handles destruction of parent within child", ()=>{
 			let order = "";
-			const a = D.state.value("")
-			D.state.root(() => {
-				D.state.watch(()=>{
+			const a = createSignal("")
+			createRoot(() => {
+				createEffect(()=>{
 					order += "outer{"
-					const b = D.state.value("")
-					D.state.watch(()=>{
+					const b = createSignal("")
+					createEffect(()=>{
 						order += "inner{"
 						b(a())
 
-						D.state.watch(()=>{
+						createEffect(()=>{
 
 						})
 						order += "}inner "
@@ -274,20 +274,20 @@ describe("D.state", () => {
 		})
 
 		it("calls cleanup", () => {
-			let innerWatch = D.state.value(true);
-			let signal = D.state.value(0);
+			let innerWatch = createSignal(true);
+			let signal = createSignal(0);
 			let cleanupACount = 0;
 			let cleanupBCount = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					if (innerWatch()) {
-						D.state.watch(() => {
+						createEffect(() => {
 							signal();
-							D.state.cleanup(() => {
+							onCleanup(() => {
 								cleanupACount++;
 							});
 						});
-						D.state.cleanup(() => {
+						onCleanup(() => {
 							cleanupBCount++;
 						});
 					}
@@ -310,11 +310,11 @@ describe("D.state", () => {
 		});
 
 		it("can be manually destroyed", () => {
-			const signal = D.state.value(0);
+			const signal = createSignal(0);
 			let count = 0;
 			let watcher;
-			D.state.root(() => {
-				watcher = D.state.watch(() => {
+			createRoot(() => {
+				watcher = createEffect(() => {
 					count++;
 					signal();
 				});
@@ -328,17 +328,17 @@ describe("D.state", () => {
 		});
 
 		it("does not leak the internal Computation instance", () => {
-			D.state.root(() => {
-				D.state.watch(function () {
+			createRoot(() => {
+				createEffect(function () {
 					assert.strictEqual(this, undefined);
 				});
 			});
 		});
 
 		it("passes errors", () => {
-			D.state.root(() => {
+			createRoot(() => {
 				assert.throws(() => {
-					D.state.watch(() => {
+					createEffect(() => {
 						throw new Error("err");
 					});
 				});
@@ -346,22 +346,22 @@ describe("D.state", () => {
 		});
 
 		it("restores current computation after throw", () => {
-			D.state.root(() => {
-				const before = getInternalState().currentContext;
+			createRoot(() => {
+				const before = _getInternalState().currentOwnerScope;
 				try {
-					D.state.watch(() => {
+					createEffect(() => {
 						throw new Error("err");
 					});
 				} catch (err) {}
-				assert.strictEqual(getInternalState().currentContext, before);
+				assert.strictEqual(_getInternalState().currentOwnerScope, before);
 			});
 		});
 
 		it("keeps running if there are more changes", () => {
-			const signal = D.state.value(0);
+			const signal = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					if (signal() >= 1 && signal() < 5) {
 						signal(signal() + 1);
@@ -375,10 +375,10 @@ describe("D.state", () => {
 		});
 
 		it("executes in order (test 1)", () => {
-			const p1 = D.state.value(0);
-			const p2 = D.state.value(0);
-			const p3 = D.state.value(0);
-			const p4 = D.state.value(0);
+			const p1 = createSignal(0);
+			const p2 = createSignal(0);
+			const p3 = createSignal(0);
+			const p4 = createSignal(0);
 
 			/*
 
@@ -415,25 +415,25 @@ describe("D.state", () => {
 			*/
 
 			let order = "";
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					order += "D{";
 					p3();
 					p4();
 					order += "}D ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "C{";
 					p4(p2() + Math.random());
 					order += "}C ";
 				});
 
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "A{";
 					p2(p1() + Math.random());
 					order += "}A ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "B{";
 					p3(p1() + Math.random());
 					order += "}B ";
@@ -446,10 +446,10 @@ describe("D.state", () => {
 		});
 
 		it("executes in order (test 2)", () => {
-			const p1 = D.state.value(0);
-			const p2 = D.state.value(0);
-			const p3 = D.state.value(0);
-			const p4 = D.state.value(0);
+			const p1 = createSignal(0);
+			const p2 = createSignal(0);
+			const p3 = createSignal(0);
+			const p4 = createSignal(0);
 
 			/*
 
@@ -468,25 +468,25 @@ describe("D.state", () => {
 			*/
 
 			let order = "";
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					order += "C{";
 					p4(p2() + 1);
 					order += "}C ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "D{";
 					p3();
 					p4();
 					order += "}D ";
 				});
 
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "A{";
 					p2(p1() + 1);
 					order += "}A ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "B{";
 					p3(p1() + 5);
 					order += "}B ";
@@ -499,10 +499,10 @@ describe("D.state", () => {
 		});
 
 		it("executes in order (test 3)", () => {
-			const p1 = D.state.value(0);
-			const p2 = D.state.value(0);
-			const p3 = D.state.value(0);
-			const p4 = D.state.value(0);
+			const p1 = createSignal(0);
+			const p2 = createSignal(0);
+			const p3 = createSignal(0);
+			const p4 = createSignal(0);
 
 			/*
 
@@ -521,24 +521,24 @@ describe("D.state", () => {
 			*/
 
 			let order = "";
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					order += "C{";
 					p4(p2() + 1);
 					order += "}C ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "D{";
 					p3();
 					p4();
 					order += "}D ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "B{";
 					p3(p1() + 5);
 					order += "}B ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "A{";
 					p2(p1() + 1);
 					order += "}A ";
@@ -551,15 +551,15 @@ describe("D.state", () => {
 		});
 
 		it("delays execution when in watch init", () => {
-			const signal = D.state.value(0);
+			const signal = createSignal(0);
 			let order = "";
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					order += "A{";
 					signal();
 					order += "}A ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "B{";
 					signal(1);
 					order += "}B ";
@@ -569,16 +569,16 @@ describe("D.state", () => {
 		});
 
 		it("delays execution when in watch execute", () => {
-			const a = D.state.value(1);
-			const signal = D.state.value(0);
+			const a = createSignal(1);
+			const signal = createSignal(0);
 			let order = "";
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					order += "A{";
 					signal();
 					order += "}A ";
 				});
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "B{";
 					signal(a());
 					order += "}B ";
@@ -590,19 +590,19 @@ describe("D.state", () => {
 		});
 
 		it("batches second stage changes", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0)
+			const a = createSignal(0);
+			const b = createSignal(0)
 			let order = ""
-			D.state.root(() => {
-				D.state.watch(()=>{
+			createRoot(() => {
+				createEffect(()=>{
 					order += "A{"+a()
 					order += "}A "
 				})
-				D.state.watch(()=>{
+				createEffect(()=>{
 					order += "B{"+b()
 					order += "}B "
 				})
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "s{"+a()+" "
 					if (a() >= 1 && a() < 3) {
 						order += "a++{"
@@ -623,19 +623,19 @@ describe("D.state", () => {
 		})
 
 		it("subclock (test 1)", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0)
+			const a = createSignal(0);
+			const b = createSignal(0)
 			let order = ""
-			D.state.root(() => {
-				D.state.watch(()=>{
+			createRoot(() => {
+				createEffect(()=>{
 					order += "A{"+a()
 					order += "}A "
 				})
-				D.state.watch(()=>{
+				createEffect(()=>{
 					order += "B{"+b()
 					order += "}B "
 				})
-				D.state.watch(() => {
+				createEffect(() => {
 					order += "s{"+a()+" "
 					if (a() >= 1 && a() < 3) {
 						order += "a++{"
@@ -643,8 +643,8 @@ describe("D.state", () => {
 						order += "}a++ "
 
 						order += "b++{"
-						D.state.subclock(()=>{
-							b(D.state.sample(b) + 1)
+						subclock(()=>{
+							b(sample(b) + 1)
 						})
 						order += "}b++ "
 					}
@@ -658,8 +658,8 @@ describe("D.state", () => {
 		})
 
 		it("subclock (test 2)", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0)
+			const a = createSignal(0);
+			const b = createSignal(0)
 			let order = ""
 
 			let level = 0
@@ -676,16 +676,16 @@ describe("D.state", () => {
 			}
 
 
-			D.state.root(() => {
-				D.state.watch(()=>{
+			createRoot(() => {
+				createEffect(()=>{
 					log("A{"+a())
 					log("}A ")
 				})
-				D.state.watch(()=>{
+				createEffect(()=>{
 					log("B{"+b())
 					log("}B ")
 				})
-				D.state.watch(() => {
+				createEffect(() => {
 					log("s{"+a()+" ")
 					if (a() >= 1 && a() < 3) {
 						log("a++{")
@@ -693,13 +693,13 @@ describe("D.state", () => {
 						log("}a++ ")
 
 						log("b++{")
-						const newB = D.state.sample(b)+1
+						const newB = sample(b)+1
 						b(Math.random()) //schedule to fire
-						D.state.subclock(()=>{
-							D.state.subclock(()=>{
-								D.state.subclock(()=>{
+						subclock(()=>{
+							subclock(()=>{
+								subclock(()=>{
 									log("subclock{")
-									D.state.subclock(()=>{
+									subclock(()=>{
 										log("inner{"+newB+" ")
 										b(newB) //this should cancel refiring
 										log("}inner ")
@@ -720,20 +720,20 @@ describe("D.state", () => {
 		})
 
 		it("Sjs issue 32", ()=>{
-			D.state.root(() => {
-				const data = D.state.data(null)
-				const cache = D.state.value(D.state.sample(() => !!data()))
+			createRoot(() => {
+				const data = createSignal(null, true)
+				const cache = createSignal(sample(() => !!data()))
 				const child = data => {
-					D.state.watch(() => {
+					createEffect(() => {
 						console.log("nested", data().length)
 					});
 					return "Hi";
 				};
-				D.state.watch(() => {
+				createEffect(() => {
 					cache(!!data())
 				});
-				const memo = D.state.memo(() => (cache() ? child(data) : undefined));
-				D.state.watch(() => {
+				const memo = createMemo(() => (cache() ? child(data) : undefined));
+				createEffect(() => {
 					console.log("view", memo())
 				});
 				console.log("ON");
@@ -744,15 +744,15 @@ describe("D.state", () => {
 		})
 
 		it("Doesn't execute a destroy-pending watcher", () => {
-			const a = D.state.value(false);
-			const b = D.state.value(false);
+			const a = createSignal(false);
+			const b = createSignal(false);
 
 			let order = "";
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					order += "outer ";
 					if (!a()) {
-						D.state.watch(() => {
+						createEffect(() => {
 							order += "inner ";
 							b();
 						});
@@ -760,7 +760,7 @@ describe("D.state", () => {
 				});
 			});
 			order = "";
-			D.state.batch(() => {
+			batch(() => {
 				order += "set b "
 				b(true);
 				order += "set a "
@@ -770,28 +770,28 @@ describe("D.state", () => {
 		});
 	});
 
-	describe("D.state.ignore", () => {
-		it("sets internalState.ignored", () => {
-			D.state.ignore(() => {
-				assert.strictEqual(getInternalState().ignored, true);
+	describe("untrack", () => {
+		it("sets internalState.collectingDependencies", () => {
+			untrack(() => {
+				assert.strictEqual(_getInternalState().collectingDependencies, false);
 			});
 		});
 
-		it("sets internalState.warnOnNoDepAdd", () => {
-			D.state.expectStatic(() => {
-				D.state.ignore(() => {
-					assert.strictEqual(getInternalState().warnOnNoDepAdd, false);
+		it("sets internalState.assertedStatic", () => {
+			assertStatic(() => {
+				untrack(() => {
+					assert.strictEqual(_getInternalState().assertedStatic, false);
 				});
 			});
 		});
 
 		it("blocks dependency collection", () => {
 			let count = 0;
-			let signal = D.state.value(0);
-			D.state.root(() => {
-				D.state.watch(() => {
+			let signal = createSignal(0);
+			createRoot(() => {
+				createEffect(() => {
 					count++;
-					D.state.ignore(() => {
+					untrack(() => {
 						signal();
 					});
 				});
@@ -803,108 +803,108 @@ describe("D.state", () => {
 
 		it("passes errors", () => {
 			assert.throws(() => {
-				D.state.ignore(() => {
+				untrack(() => {
 					throw new Error("err");
 				});
 			});
 		});
 
 		it("restores current computation after throw", () => {
-			D.state.root(() => {
-				D.state.watch(() => {
-					const before = getInternalState().currentContext;
+			createRoot(() => {
+				createEffect(() => {
+					const before = _getInternalState().currentOwnerScope;
 					try {
-						D.state.ignore(() => {
+						untrack(() => {
 							throw new Error("err");
 						});
 					} catch (err) {}
-					assert.strictEqual(getInternalState().currentContext, before);
+					assert.strictEqual(_getInternalState().currentOwnerScope, before);
 				});
 			});
 		});
 
-		it("pops ignore state (true)", () => {
-			D.state.ignore(() => {
-				D.state.ignore(() => {});
-				assert.strictEqual(getInternalState().ignored, true);
+		it("pops collectingDependencies state (false)", () => {
+			untrack(() => {
+				untrack(() => {});
+				assert.strictEqual(_getInternalState().collectingDependencies, false);
 			});
 		});
 
-		it("pops ignore state (false)", () => {
-			D.state.ignore(() => {});
-			assert.strictEqual(getInternalState().ignored, false);
+		it("pops collectingDependencies state (true)", () => {
+			untrack(() => {});
+			assert.strictEqual(_getInternalState().collectingDependencies, true);
 		});
 
-		it("pops ignore state after throw (true)", () => {
-			D.state.ignore(() => {
+		it("pops collectingDependencies state after throw (false)", () => {
+			untrack(() => {
 				try {
-					D.state.ignore(() => {
+					untrack(() => {
 						throw new Error("err");
 					});
 				} catch (err) {}
-				assert.strictEqual(getInternalState().ignored, true);
+				assert.strictEqual(_getInternalState().collectingDependencies, false);
 			});
 		});
 
-		it("pops ignore state after throw (false)", () => {
+		it("pops collectingDependencies state after throw (true)", () => {
 			try {
-				D.state.ignore(() => {
+				untrack(() => {
 					throw new Error("err");
 				});
 			} catch (err) {}
-			assert.strictEqual(getInternalState().ignored, false);
+			assert.strictEqual(_getInternalState().collectingDependencies, true);
 		});
 
-		it("pops warnOnDep state (true)", () => {
-			D.state.expectStatic(() => {
-				D.state.ignore(() => {});
-				assert.strictEqual(getInternalState().warnOnNoDepAdd, true);
+		it("pops assertedStatic state (true)", () => {
+			assertStatic(() => {
+				untrack(() => {});
+				assert.strictEqual(_getInternalState().assertedStatic, true);
 			});
 		});
 
-		it("pops warnOnDep state after throw (true)", () => {
-			D.state.expectStatic(() => {
+		it("pops assertedStatic state after throw (true)", () => {
+			assertStatic(() => {
 				try {
-					D.state.ignore(() => {
+					untrack(() => {
 						throw new Error("err");
 					});
 				} catch (err) {}
-				assert.strictEqual(getInternalState().warnOnNoDepAdd, true);
+				assert.strictEqual(_getInternalState().assertedStatic, true);
 			});
 		});
 	});
 
-	describe("D.state.unignore", () => {
-		it("sets internalState.ignored", () => {
-			D.state.ignore(() => {
-				D.state.unignore(() => {
-					assert.strictEqual(getInternalState().ignored, false);
+	describe("retrack", () => {
+		it("sets internalState.collectingDependencies", () => {
+			untrack(() => {
+				retrack(() => {
+					assert.strictEqual(_getInternalState().collectingDependencies, true);
 				});
 			});
 		});
 
-		it("does not set internalState.warnOnNoDepAdd", () => {
-			D.state.expectStatic(() => {
-				D.state.unignore(() => {
-					assert.strictEqual(getInternalState().warnOnNoDepAdd, true);
+		it("does not set internalState.assertedStatic", () => {
+			assertStatic(() => {
+				retrack(() => {
+					assert.strictEqual(_getInternalState().assertedStatic, true);
 				});
 			});
 		});
 
-		it("does not set internalState.warnOnNoDepAdd", () => {
-			D.state.unignore(() => {
-				assert.strictEqual(getInternalState().warnOnNoDepAdd, false);
+		it("does not set internalState.assertedStatic", () => {
+			retrack(() => {
+				assert.strictEqual(_getInternalState().assertedStatic, false);
 			});
 		});
 
-		it("cancels ignore", () => {
+		it("cancels untrack", () => {
 			let count = 0;
-			let signal = D.state.value(0);
-			D.state.root(() => {
-				D.state.watch(() => {
+			let signal = createSignal(0);
+			createRoot(() => {
+				createEffect(() => {
 					count++;
-					D.state.ignore(() => {
-						D.state.unignore(() => {
+					untrack(() => {
+						retrack(() => {
 							signal();
 						});
 					});
@@ -917,49 +917,49 @@ describe("D.state", () => {
 
 		it("passes errors", () => {
 			assert.throws(() => {
-				D.state.unignore(() => {
+				retrack(() => {
 					throw new Error("err");
 				});
 			});
 		});
 
-		it("pops ignore state (true)", () => {
-			D.state.ignore(() => {
-				D.state.unignore(() => {});
-				assert.strictEqual(getInternalState().ignored, true);
+		it("pops collectingDependencies state (false)", () => {
+			untrack(() => {
+				retrack(() => {});
+				assert.strictEqual(_getInternalState().collectingDependencies, false);
 			});
 		});
 
-		it("pops ignore state after throw (true)", () => {
-			D.state.ignore(() => {
+		it("pops collectingDependencies state after throw (false)", () => {
+			untrack(() => {
 				try {
-					D.state.unignore(() => {
+					retrack(() => {
 						throw new Error("err");
 					});
 				} catch (err) {}
-				assert.strictEqual(getInternalState().ignored, true);
+				assert.strictEqual(_getInternalState().collectingDependencies, false);
 			});
 		});
 	});
 
-	describe("D.state.expectStatic", () => {
-		it("sets internalState.ignored", () => {
-			D.state.expectStatic(() => {
-				assert.strictEqual(getInternalState().ignored, true);
+	describe("assertStatic", () => {
+		it("sets internalState.collectingDependencies", () => {
+			assertStatic(() => {
+				assert.strictEqual(_getInternalState().collectingDependencies, false);
 			});
 		});
 
-		it("sets internalState.warnOnNoDepAdd", () => {
-			D.state.expectStatic(() => {
-				assert.strictEqual(getInternalState().warnOnNoDepAdd, true);
+		it("sets internalState.assertedStatic", () => {
+			assertStatic(() => {
+				assert.strictEqual(_getInternalState().assertedStatic, true);
 			});
 		});
 	});
 
-	describe("D.state.makeSignal", () => {
+	describe("toSignal", () => {
 		it("creates something portlike", () => {
 			let setVal;
-			let signal = D.state.makeSignal(
+			let signal = toSignal(
 				() => 5,
 				(val) => {
 					setVal = val;
@@ -974,15 +974,15 @@ describe("D.state", () => {
 		it("does not have internal state", () => {
 			let count = 0;
 			let setVal;
-			let signal = D.state.makeSignal(
+			let signal = toSignal(
 				() => 5,
 				(val) => {
 					setVal = val;
 				}
 			);
 
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					signal();
 				});
@@ -993,20 +993,20 @@ describe("D.state", () => {
 		});
 	});
 
-	describe("D.state.batch", () => {
+	describe("batch", () => {
 		it("batches updates", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0);
+			const a = createSignal(0);
+			const b = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					a();
 					b();
 				});
 			});
 			assert.strictEqual(count, 1);
-			D.state.batch(() => {
+			batch(() => {
 				a(1);
 				assert.strictEqual(count, 1);
 				b(1);
@@ -1020,17 +1020,17 @@ describe("D.state", () => {
 		});
 
 		it("allows ports to update before the end of the batch", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0);
+			const a = createSignal(0);
+			const b = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					a();
 					b();
 				});
 			});
-			D.state.batch(() => {
+			batch(() => {
 				a(1);
 				b(1);
 				assert.strictEqual(a(), 1);
@@ -1039,17 +1039,17 @@ describe("D.state", () => {
 		});
 
 		it("allows ports to update more than once", () => {
-			const a = D.state.value(0);
-			const b = D.state.value(0);
+			const a = createSignal(0);
+			const b = createSignal(0);
 			let count = 0;
-			D.state.root(() => {
-				D.state.watch(() => {
+			createRoot(() => {
+				createEffect(() => {
 					count++;
 					a();
 					b();
 				});
 			});
-			D.state.batch(() => {
+			batch(() => {
 				a(1);
 				b(1);
 				a(2);
@@ -1059,7 +1059,7 @@ describe("D.state", () => {
 
 		it("passes errors", () => {
 			assert.throws(() => {
-				D.state.batch(() => {
+				batch(() => {
 					throw new Error("err");
 				});
 			});

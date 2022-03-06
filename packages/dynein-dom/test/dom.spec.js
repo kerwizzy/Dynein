@@ -1,16 +1,17 @@
-import { default as D } from "dynein"
+import { createRootScope, createSignal, toSignal, createEffect, batch } from "@dynein/state"
+import { portalInto, elements, addIf, addAsyncReplaceable, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
 
 function mount(inner) {
 	let test
-	D.state.root(()=>{
-		D.dom.mount(document.createElement("div"), ()=>{
-			test = D.dom.elements.div(inner)
+	createRootScope(()=>{
+		portalInto(document.createElement("div"), null, ()=>{
+			test = elements.div(inner)
 		})
 	})
 	return {body: test}
 }
 
-describe("D.dom", ()=>{
+describe("@dynein/dom", ()=>{
 	if (typeof process !== "undefined") {
 		beforeEach(()=>{
 			const dom = new JSDOM(`<body></body>`)
@@ -20,7 +21,7 @@ describe("D.dom", ()=>{
 
 		it("creates an element", ()=>{
 			const document = mount(()=>{
-				D.dom.elements.div()
+				elements.div()
 			})
 			assert.strictEqual(document.body.innerHTML, "<div></div>")
 		})
@@ -43,19 +44,19 @@ describe("D.dom", ()=>{
 		sinon.spy(console, 'error');
 	});
 
-	describe("D.dom.elements", ()=>{
-		describe("D.dom.elements (simple creation)", ()=>{
+	describe("elements", ()=>{
+		describe("elements (simple creation)", ()=>{
 			it("creates an element", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.div()
+					elements.div()
 				})
 				assert.strictEqual(document.body.innerHTML, "<div></div>")
 			})
 
 			it("creates nested elements", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.div(()=>{
-						D.dom.elements.span()
+					elements.div(()=>{
+						elements.span()
 					})
 				})
 				assert.strictEqual(document.body.innerHTML, "<div><span></span></div>")
@@ -63,63 +64,63 @@ describe("D.dom", ()=>{
 
 			it("returns the created element", ()=>{
 				const document = mount(()=>{
-					const el = D.dom.elements.div()
+					const el = elements.div()
 					assert.ok(el instanceof window.Element)
 				})
 			})
 
 			it("throws when out of context", ()=>{
 				assert.throws(()=>{
-					D.dom.elements.div()
+					elements.div()
 				})
 			})
 
 			it("sets attrs", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.a({href:"a"})
+					elements.a({href:"a"})
 				})
 				assert.strictEqual(document.body.innerHTML, `<a href="a"></a>`)
 			})
 
 			it("sets class", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.div({class:"a"})
+					elements.div({class:"a"})
 				})
 				assert.strictEqual(document.body.innerHTML, `<div class="a"></div>`)
 			})
 
 			it("sets style", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.div({style:"color: red"})
+					elements.div({style:"color: red"})
 				})
 				assert.strictEqual(document.body.innerHTML, `<div style="color: red;"></div>`)
 			})
 
 			it("supports string inner", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.div("test")
+					elements.div("test")
 				})
 				assert.strictEqual(document.body.innerHTML, `<div>test</div>`)
 			})
 
 			it("escapes string inner", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.div("<b>test</b>")
+					elements.div("<b>test</b>")
 				})
 				assert.strictEqual(document.body.innerHTML, `<div>&lt;b&gt;test&lt;/b&gt;</div>`)
 			})
 
 			it("escapes attr value", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.a({href:`">escaped?!`})
+					elements.a({href:`">escaped?!`})
 				})
 				assert.strictEqual(document.body.innerHTML, `<a href="&quot;>escaped?!"></a>`)
 			})
 
 			it("supports attrs and inner", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.a({href:"a"}, ()=>{
-						D.dom.elements.span({style:"color:red"}, "test")
+					elements.a({href:"a"}, ()=>{
+						elements.span({style:"color:red"}, "test")
 					})
 				})
 				assert.strictEqual(document.body.innerHTML, `<a href="a"><span style="color: red;">test</span></a>`)
@@ -128,7 +129,7 @@ describe("D.dom", ()=>{
 			it("passes errors", ()=>{
 				const document = mount(()=>{
 					assert.throws(()=>{
-						D.dom.elements.div(()=>{
+						elements.div(()=>{
 							throw new Error("Err")
 						})
 					})
@@ -138,24 +139,24 @@ describe("D.dom", ()=>{
 			it("restores state after errors", ()=>{
 				const document = mount(()=>{
 					try {
-						D.dom.elements.div(()=>{
+						elements.div(()=>{
 							throw new Error("test err")
 						})
 					} catch (err) {
 
 					}
-					D.dom.elements.span()
+					elements.span()
 				})
 				assert.strictEqual(document.body.innerHTML, `<span></span>`)
 			})
 		})
 
-		describe("D.dom.elements (listeners)", ()=>{
+		describe("elements (listeners)", ()=>{
 			it("adds listeners", ()=>{
 				let count = 0
 				let el
 				const document = mount(()=>{
-					el = D.dom.elements.button({onclick:()=>{
+					el = elements.button({onclick:()=>{
 						count++
 					}})
 				})
@@ -168,7 +169,7 @@ describe("D.dom", ()=>{
 				let count = 0
 				let el
 				const document = mount(()=>{
-					el = D.dom.elements.button({onCLiCk:()=>{
+					el = elements.button({onCLiCk:()=>{
 						count++
 					}})
 				})
@@ -180,7 +181,7 @@ describe("D.dom", ()=>{
 			it("passes `this` properly", ()=>{
 				let el
 				const document = mount(()=>{
-					el = D.dom.elements.button({onclick: function() {
+					el = elements.button({onclick: function() {
 						assert.ok(this instanceof window.Element)
 					}})
 				})
@@ -191,18 +192,18 @@ describe("D.dom", ()=>{
 			it("allows null listener", ()=>{
 				const document = mount(()=>{
 					assert.doesNotThrow(()=>{
-						D.dom.elements.button({onclick: null})
+						elements.button({onclick: null})
 					})
 				})
 			})
 
 			it("destroys watchers inside listeners on listener reexecute", ()=>{
-				let signal = D.state.value(0)
+				let signal = createSignal(0)
 				let el
 				let count = 0
 				const document = mount(()=>{
-					el = D.dom.elements.button({onclick: function() {
-						D.state.watch(()=>{
+					el = elements.button({onclick: function() {
+						createEffect(()=>{
 							signal()
 							count++
 						})
@@ -219,18 +220,18 @@ describe("D.dom", ()=>{
 			})
 		})
 
-		describe("D.dom.elements (bindings)", ()=>{
+		describe("elements (bindings)", ()=>{
 			it("inits from a read-only binding", ()=>{
 				const document = mount(()=>{
-					D.dom.elements.a({href:()=>"test"})
+					elements.a({href:()=>"test"})
 				})
 				assert.strictEqual(document.body.innerHTML, `<a href="test"></a>`)
 			})
 
 			it("watches dependencies", ()=>{
-				const signal = D.state.value(0)
+				const signal = createSignal(0)
 				const document = mount(()=>{
-					D.dom.elements.a({name:()=>signal()})
+					elements.a({name:()=>signal()})
 				})
 				assert.strictEqual(document.body.innerHTML, `<a name="0"></a>`)
 				signal(1)
@@ -238,18 +239,18 @@ describe("D.dom", ()=>{
 			})
 
 			it("warns when passing a signal to a non-evented attr", ()=>{
-				const signal = D.state.value(0)
+				const signal = createSignal(0)
 				const document = mount(()=>{
-					D.dom.elements.div({myattr:signal})
+					elements.div({myattr:signal})
 				})
 				assert.ok( console.warn.calledWithMatch("No update event") )
 			})
 
 			it("updates the signal for evented attrs", ()=>{
-				const signal = D.state.value("txt")
+				const signal = createSignal("txt")
 				let el
 				const document = mount(()=>{
-					el = D.dom.elements.input({value:signal})
+					el = elements.input({value:signal})
 				})
 				assert.strictEqual(el.value, "txt")
 				el.value = "test"
@@ -259,39 +260,39 @@ describe("D.dom", ()=>{
 		})
 	})
 
-	describe("D.dom.text", ()=>{
+	describe("addText", ()=>{
 		it("creates text", ()=>{
 			const document = mount(()=>{
-				D.dom.text("test")
+				addText("test")
 			})
 			assert.strictEqual(document.body.innerHTML, `test`)
 		})
 
 		it("allows numbers", ()=>{
 			const document = mount(()=>{
-				D.dom.text(123)
+				addText(123)
 			})
 			assert.strictEqual(document.body.innerHTML, `123`)
 		})
 
 		it("escapes html", ()=>{
 			const document = mount(()=>{
-				D.dom.text("<b>test</b>")
+				addText("<b>test</b>")
 			})
 			assert.strictEqual(document.body.innerHTML, `&lt;b&gt;test&lt;/b&gt;`)
 		})
 
 		it("allows functions", ()=>{
 			const document = mount(()=>{
-				D.dom.text(()=>"test")
+				addText(()=>"test")
 			})
 			assert.strictEqual(document.body.innerHTML, `test`)
 		})
 
 		it("updates on deps change", ()=>{
-			let signal = D.state.value("test")
+			let signal = createSignal("test")
 			const document = mount(()=>{
-				D.dom.text(()=>signal())
+				addText(()=>signal())
 			})
 			assert.strictEqual(document.body.innerHTML, `test`)
 			signal("1234")
@@ -301,7 +302,7 @@ describe("D.dom", ()=>{
 		it("passes errors", ()=>{
 			const document = mount(()=>{
 				assert.throws(()=>{
-					D.dom.text(()=>{
+					addText(()=>{
 						throw new Error("err")
 					})
 				})
@@ -311,25 +312,25 @@ describe("D.dom", ()=>{
 		it("throws on dom inside", ()=>{
 			const document = mount(()=>{
 				assert.throws(()=>{
-					D.dom.text(()=>{
-						D.dom.elements.div();
+					addText(()=>{
+						elements.div();
 					})
 				})
 			})
 		})
 	})
 
-	describe("D.dom.html", ()=>{
+	describe("addHTML", ()=>{
 		it("creates text", ()=>{
 			const document = mount(()=>{
-				D.dom.html("test")
+				addHTML("test")
 			})
 			assert.strictEqual(document.body.innerHTML, `test`)
 		})
 
 		it("does not escape html", ()=>{
 			const document = mount(()=>{
-				D.dom.html(`<b myattr="test">test</b>`)
+				addHTML(`<b myattr="test">test</b>`)
 			})
 			assert.strictEqual(document.body.innerHTML, `<b myattr="test">test</b>`)
 		})
@@ -337,29 +338,29 @@ describe("D.dom", ()=>{
 		it("does not allow functions", ()=>{
 			const document = mount(()=>{
 				assert.throws(()=>{
-					D.dom.html(()=>"test")
+					addHTML(()=>"test")
 				})
 			})
 		})
 	})
 
-	describe("D.dom.node", ()=>{
+	describe("addNode", ()=>{
 		it("inserts a node into the DOM", ()=>{
 			const node = document.createElement("div")
 			node.textContent = "test"
 			node.setAttribute("myattr", "test")
 			const doc = mount(()=>{
-				D.dom.node(node)
+				addNode(node)
 			})
 			assert.strictEqual(doc.body.innerHTML, `<div myattr="test">test</div>`)
 		})
 	})
 
-	describe("D.dom.if", ()=>{
+	describe("addIf", ()=>{
 		it("creates when truthy", ()=>{
 			const document = mount(()=>{
-				D.dom.if(()=>1, ()=>{
-					D.dom.elements.div()
+				addIf(()=>1, ()=>{
+					elements.div()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
@@ -367,8 +368,8 @@ describe("D.dom", ()=>{
 
 		it("does not create when falsy", ()=>{
 			const document = mount(()=>{
-				D.dom.if(()=>0, ()=>{
-					D.dom.elements.div()
+				addIf(()=>0, ()=>{
+					elements.div()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
@@ -376,12 +377,12 @@ describe("D.dom", ()=>{
 
 		it("cascades properly (1)", ()=>{
 			const document = mount(()=>{
-				D.dom.if(()=>1, ()=>{
-					D.dom.elements.div()
+				addIf(()=>1, ()=>{
+					elements.div()
 				}).elseif(()=>1, ()=>{
-					D.dom.elements.span()
+					elements.span()
 				}).else(()=>{
-					D.dom.elements.a()
+					elements.a()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
@@ -389,12 +390,12 @@ describe("D.dom", ()=>{
 
 		it("cascades properly (2)", ()=>{
 			const document = mount(()=>{
-				D.dom.if(()=>0, ()=>{
-					D.dom.elements.div()
+				addIf(()=>0, ()=>{
+					elements.div()
 				}).elseif(()=>1, ()=>{
-					D.dom.elements.span()
+					elements.span()
 				}).else(()=>{
-					D.dom.elements.a()
+					elements.a()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<span></span>`)
@@ -402,12 +403,12 @@ describe("D.dom", ()=>{
 
 		it("cascades properly (3)", ()=>{
 			const document = mount(()=>{
-				D.dom.if(()=>0, ()=>{
-					D.dom.elements.div()
+				addIf(()=>0, ()=>{
+					elements.div()
 				}).elseif(()=>0, ()=>{
-					D.dom.elements.span()
+					elements.span()
 				}).else(()=>{
-					D.dom.elements.a()
+					elements.a()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<a></a>`)
@@ -415,23 +416,23 @@ describe("D.dom", ()=>{
 
 		it("renders nothing when all are false", ()=>{
 			const document = mount(()=>{
-				D.dom.if(()=>0, ()=>{
-					D.dom.elements.div()
+				addIf(()=>0, ()=>{
+					elements.div()
 				}).elseif(()=>0, ()=>{
-					D.dom.elements.span()
+					elements.span()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
 		})
 
 		it("renders nothing when all are changed to be false", ()=>{
-			const a = D.state.value(0)
-			const b = D.state.value(0)
+			const a = createSignal(0)
+			const b = createSignal(0)
 			const document = mount(()=>{
-				D.dom.if(()=>a(), ()=>{
-					D.dom.elements.div()
+				addIf(()=>a(), ()=>{
+					elements.div()
 				}).elseif(()=>b(), ()=>{
-					D.dom.elements.span()
+					elements.span()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
@@ -448,7 +449,7 @@ describe("D.dom", ()=>{
 		it("passes errors", ()=>{
 			const document = mount(()=>{
 				assert.throws(()=>{
-					D.dom.if(()=>1, ()=>{
+					addIf(()=>1, ()=>{
 						throw new Error("err")
 					})
 				})
@@ -456,12 +457,12 @@ describe("D.dom", ()=>{
 		})
 
 		it("rerenders on state change", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			const document = mount(()=>{
-				D.dom.if(()=>signal(), ()=>{
-					D.dom.elements.div()
+				addIf(()=>signal(), ()=>{
+					elements.div()
 				}).else(()=>{
-					D.dom.elements.span()
+					elements.span()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
@@ -470,11 +471,11 @@ describe("D.dom", ()=>{
 		})
 
 		it("does not track inner dependencies", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			const document = mount(()=>{
-				D.dom.if(()=>1, ()=>{
+				addIf(()=>1, ()=>{
 					if (signal()) {
-						D.dom.elements.div()
+						elements.div()
 					}
 				})
 			})
@@ -485,14 +486,14 @@ describe("D.dom", ()=>{
 		})
 
 		it("does not rerender inner when reaching the same condition", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			let count = 0
 			const document = mount(()=>{
-				D.dom.if(signal, ()=>{
+				addIf(signal, ()=>{
 					count++
-					D.dom.elements.div()
+					elements.div()
 				}).else(()=>{
-					D.dom.elements.span()
+					elements.span()
 				})
 			})
 			assert.strictEqual(count, 1)
@@ -501,14 +502,14 @@ describe("D.dom", ()=>{
 		})
 
 		it("does not keep-alive inner", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			let count = 0
 			const document = mount(()=>{
-				D.dom.if(signal, ()=>{
+				addIf(signal, ()=>{
 					count++
-					D.dom.elements.div()
+					elements.div()
 				}).else(()=>{
-					D.dom.elements.span()
+					elements.span()
 				})
 			})
 			assert.strictEqual(count, 1)
@@ -518,12 +519,12 @@ describe("D.dom", ()=>{
 		})
 
 		it("updates in a single tick", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			const document = mount(()=>{
-				D.dom.if(()=>signal(), ()=>{
-					D.dom.replacer(()=>{
+				addIf(()=>signal(), ()=>{
+					addDynamic(()=>{
 						if (!signal()) {
-							throw new Error("Got falsy in truthy D.dom.if branch")
+							throw new Error("Got falsy in truthy addIf branch")
 						}
 					})
 				})
@@ -535,15 +536,15 @@ describe("D.dom", ()=>{
 		})
 
 		it("updates in a single tick (2)", ()=>{
-			const url = D.state.value("abc")
+			const url = createSignal("abc")
 
 			const document = mount(()=>{
-				D.dom.if(()=>false, ()=>{
+				addIf(()=>false, ()=>{
 
 				}).elseif(()=>url() === "xyz", ()=>{
 
 				}).elseif(()=>/abc/.test(url()), ()=>{
-					D.dom.replacer(()=>{
+					addDynamic(()=>{
 						if (!/abc/.exec(url())) {
 							throw new Error("Got wrong state in branch")
 						}
@@ -552,31 +553,31 @@ describe("D.dom", ()=>{
 			})
 
 			assert.doesNotThrow(()=>{
-				D.state.batch(()=>{
+				batch(()=>{
 					url("xyz")
 				})
 			})
 		})
 	})
 
-	describe("D.dom.replacer", ()=>{
+	describe("addDynamic", ()=>{
 		it("creates", ()=>{
 			const document = mount(()=>{
-				D.dom.replacer(()=>{
-					D.dom.elements.div()
+				addDynamic(()=>{
+					elements.div()
 				})
 			})
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div></div>`)
 		})
 
 		it("rerenders on state change", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			const document = mount(()=>{
-				D.dom.replacer(()=>{
+				addDynamic(()=>{
 					if (signal()) {
-						D.dom.elements.div()
+						elements.div()
 					} else {
-						D.dom.elements.span()
+						elements.span()
 					}
 				})
 			})
@@ -588,22 +589,22 @@ describe("D.dom", ()=>{
 		it("passes errors", ()=>{
 			const document = mount(()=>{
 				assert.throws(()=>{
-					D.dom.replacer(()=>{
+					addDynamic(()=>{
 						throw new Error("err")
 					})
 				})
 			})
 		})
 
-		// parallel to the D.dom.if test case
+		// parallel to the addIf test case
 		it("updates in a single tick", ()=>{
-			const signal = D.state.value(1)
+			const signal = createSignal(1)
 			const document = mount(()=>{
-				D.dom.replacer(()=>{
+				addDynamic(()=>{
 					if (signal()) {
-						D.dom.replacer(()=>{
+						addDynamic(()=>{
 							if (!signal()) {
-								throw new Error("Got falsy in truthy D.dom.if branch")
+								throw new Error("Got falsy in truthy addIf branch")
 							}
 						})
 					}
@@ -616,12 +617,12 @@ describe("D.dom", ()=>{
 		})
 	})
 
-	describe("D.dom.async", ()=>{
+	describe("addAsyncReplaceable", ()=>{
 		it("creates", ()=>{
 			const document = mount(()=>{
-				D.dom.async(($r)=>{
+				addAsyncReplaceable(($r)=>{
 					$r(()=>{
-						D.dom.elements.div()
+						elements.div()
 					})
 				})
 			})
@@ -630,12 +631,12 @@ describe("D.dom", ()=>{
 
 		it("replaces", ()=>{
 			const document = mount(()=>{
-				D.dom.async(($r)=>{
+				addAsyncReplaceable(($r)=>{
 					$r(()=>{
-						D.dom.elements.div()
+						elements.div()
 					})
 					$r(()=>{
-						D.dom.elements.span()
+						elements.span()
 					})
 				})
 			})
@@ -643,22 +644,22 @@ describe("D.dom", ()=>{
 		})
 
 		it("destroys previous subcontexts", ()=>{
-			const signal = D.state.data(true)
+			const signal = createSignal(true, true)
 			let count = 0
 			const document = mount(()=>{
-				D.dom.async(($r)=>{
+				addAsyncReplaceable(($r)=>{
 					$r(()=>{
-						D.state.watch(()=>{
+						createEffect(()=>{
 							signal()
 							count++
 						})
-						D.dom.elements.div()
+						elements.div()
 					})
 					assert.strictEqual(count, 1, "init")
 					signal(true)
 					assert.strictEqual(count, 2, "update after watcher active")
 					$r(()=>{
-						D.dom.elements.span()
+						elements.span()
 					})
 					signal(true)
 					assert.strictEqual(count, 2, "update after watcher should be destroyed")

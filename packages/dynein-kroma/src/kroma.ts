@@ -1,4 +1,4 @@
-import D from "dynein"
+import * as D from "@dynein/state"
 import Color from "./Color.js"
 import Gradient from "./Gradient.js"
 
@@ -108,7 +108,7 @@ function css(strs: TemplateStringsArray, ...values: any): void {
 		console.log("adding ",ruleText)
 		document.head.appendChild(el)
 	}
-	D.state.cleanup(()=>{
+	D.onCleanup(()=>{
 		rec.refs--
 		if (rec.refs === 0) {
 			console.log("can remove",rec)

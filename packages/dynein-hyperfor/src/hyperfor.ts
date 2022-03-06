@@ -1,4 +1,6 @@
-import D, {DataSignal, DestructionContext} from "dynein"
+import { assertStatic, createEffect, createSignal, DestructionScope, getScope, onCleanup, onUpdate, runInScope, Signal } from "@dynein/state"
+import { addNode, setInsertionState } from "@dynein/dom"
+import SignalArray from "@dynein/signalarray"
 
 enum RenderState {
 	keep,
@@ -6,7 +8,7 @@ enum RenderState {
 	remove
 }
 
-interface Render<T> {
+interface ItemPatchState<T> {
 	state: RenderState
 
 	value: T
@@ -14,187 +16,140 @@ interface Render<T> {
 	start: Node | null
 	end: Node | null
 
-	prev: Render<T> | null
-	next: Render<T> | null
+	prev: ItemPatchState<T> | null
+	next: ItemPatchState<T> | null
 
-	ctx: DestructionContext
+	scope: DestructionScope
+
+	indexSignal: Signal<number>
 
 	debugID: string
 }
 
-export default class Hyperfor<T> {
-	startItem: Render<T> | null
-	toPatch: Render<T>[]
-	start: Node
-	end: Node
-	render: (item: T) => void
-	boundPatch: ()=>void
-	ctx: DestructionContext | null | undefined
+class Hyperfor<T> {
+	private startItem: ItemPatchState<T> | null = null
+	private desiredState: ItemPatchState<T>[] = []
+	private arr: SignalArray<T>
+	private start: Node
+	//private end: Node
+	private render: (item: T, index: ()=>number) => void
+	private scope: DestructionScope | null | undefined
 
-	constructor(init: T[], render: (item: T) => void) {
+	constructor(arr: SignalArray<T>, render: (item: T, index: ()=>number) => void) {
 		this.render = render
-		this.start = D.dom.node(document.createComment("<hyperfor>"))
-		this.toPatch = []
-		this.startItem = null
+		this.start = addNode(document.createComment("<hyperfor>"))
+		//this.end = addNode(document.createComment("</hyperfor>"))
 
-		this.end = D.dom.node(document.createComment("</hyperfor>"))
+		this.scope = getScope()
+		this.arr = arr
 
-		this.boundPatch = this.patch.bind(this)
-
-		this.ctx = D.state.getContext()
-		console.log("create hyperfor set ctx = ",this.ctx)
-
-		this.set(init)
+		this.setupInitialPatch()
 		this.patch()
+		this.setupSpliceWatcher()
 	}
 
-	clear() {
-		if (this.start.previousSibling === null && this.end.nextSibling === null) {
-			const parent = this.start.parentNode!
-			parent.textContent = ""
-			parent.appendChild(this.start)
-			parent.appendChild(this.end)
-		} else {
-			const range = document.createRange()
-			range.setStartAfter(this.start)
-			range.setEndBefore(this.end)
-			range.deleteContents()
+	private setupInitialPatch() {
+		let prev: null | ItemPatchState<T> = null
+		const arr = this.arr.value()
+		for (const item of arr) {
+			const state: ItemPatchState<T> = {
+				state: RenderState.add,
+				value: item,
+				prev: prev,
+				next: null,
+				start: null,
+				end: null,
+				indexSignal: createSignal(0),
+				scope: new DestructionScope(this.scope),
+				debugID: "dbg_"+Math.random().toString(16).substring(2, 8)
+			}
+			if (prev) {
+				prev.next = state
+			} else {
+				this.startItem = state
+			}
+			this.desiredState.push(state)
+			prev = state
 		}
-		for (const render of this.toPatch) {
-			render.ctx.destroy()
-		}
-		this.toPatch = []
 	}
 
-	set(val: T[]) {
-		D.state.setContext(this.ctx, ()=>{
-			this.clear()
+	private setupSpliceWatcher() {
+		onUpdate(this.arr.spliceEvent, (evt) => {
+			if (evt) {
 
-			this.startItem = null
-			D.dom.runInNodeContext(this.end.parentNode, this.end, ()=>{
-				D.state.expectStatic(()=>{
-					for (let i = 0; i<val.length; i++) {
-						const value = val[i]
+				const [start, removeLength, added, removed] = evt
 
-						const debugID = "dbg_"+Math.random().toString(16).substring(2, 8)
-						const start = D.dom.node(document.createComment(debugID))
-						const ctx = new D.state.DestructionContext()
-						ctx.resume(()=>{
-							this.render(value)
-						})
-						const end = D.dom.node(document.createComment(debugID))
-						const render: Render<T> = {
-							state: RenderState.keep,
-							value,
-							start,
-							end,
-							prev: null,
-							next: null,
-							ctx,
-							debugID: debugID
-						}
-						if (i === 0) {
-							this.startItem = render
-						} else {
-							render.prev = this.toPatch[i-1]
-							render.prev.next = render
-						}
-						this.toPatch.push(render)
+				for (let i = start; i<start+removeLength; i++) {
+					this.desiredState[i].state = RenderState.remove
+				}
+				const afterIndex = start+removeLength
+				const lastRemoved = afterIndex >= 1 ? this.desiredState[afterIndex-1] : null
+				let prev = lastRemoved
+
+				const toInsert: ItemPatchState<T>[] = []
+
+				for (let j = 0; j<added.length; j++) {
+					const value = added[j]
+
+					const debugID = "dbg_"+Math.random().toString(16).substring(2, 8)
+					const state: ItemPatchState<T> = {
+						state: RenderState.add,
+						value,
+						start: null,
+						end: null,
+						prev: prev,
+						next: null,
+						indexSignal: createSignal(0),
+						scope: new DestructionScope(this.scope),
+						debugID
 					}
-				})
-			})
+					if (prev === null) {
+						this.startItem = state
+					} else {
+						prev.next = state
+					}
+					prev = state
+					toInsert.push(state)
+				}
+
+				if (afterIndex < this.desiredState.length) {
+					const afterRender = this.desiredState[afterIndex]
+					if (prev) {
+						prev.next = afterRender
+						afterRender.prev = prev
+					}
+				}
+
+				this.desiredState.splice(start, removeLength, ...toInsert)
+			}
 		})
 	}
 
-	getItem(i: number) {
-		return this.toPatch[i].value
-	}
-
-	splice(start: number, remove: number, ...insert: T[]) {
-		return this.spliceArr(start, remove, insert)
-	}
-
-	spliceArr(start: number, remove: number, insert: T[]) {
-		const values: T[] = []
-		D.state.setContext(this.ctx, ()=>{
-			for (let i = start; i<start+remove; i++) {
-				values.push(this.toPatch[i].value)
-				this.toPatch[i].state = RenderState.remove
-			}
-			const afterIndex = start+remove
-			let prev = afterIndex >= 1 ? this.toPatch[afterIndex-1] : null
-
-			const toInsert: Render<T>[] = []
-
-			for (let j = 0; j<insert.length; j++) {
-				const value = insert[j]
-
-				const debugID = "dbg_"+Math.random().toString(16).substring(2, 8)
-				const render: Render<T> = {
-					state: RenderState.add,
-					value,
-					start: null,
-					end: null,
-					prev: prev,
-					next: null,
-					ctx: new D.state.DestructionContext(),
-					debugID
-				}
-				if (prev === null) {
-					this.startItem = render
-				} else {
-					prev.next = render
-				}
-				prev = render
-				toInsert.push(render)
-			}
-
-			if (afterIndex < this.toPatch.length) {
-				const afterRender = this.toPatch[afterIndex]
-				if (prev) {
-					prev.next = afterRender
-					afterRender.prev = prev
-				}
-			}
-
-			this.toPatch.splice(start, remove, ...toInsert)
-		})
-		return values
-	}
-
-	findIndex(fn: (item: T) => boolean) {
-		for (let i = 0; i<this.toPatch.length; i++) {
-			if (fn(this.toPatch[i].value)){
-				return i
-			}
-		}
-		return -1
-	}
-
-	get length() {
-		return this.toPatch.length
-	}
-
-	patch() {
-		const rendered: Render<T>[] = []
-		let item = this.startItem
+	private patch() {
+		const rendered: ItemPatchState<T>[] = []
+		let itemIterator = this.startItem
 		let prevNode = this.start
-		D.state.expectStatic(()=>{
-			while (item) {
+		const render = this.render // assign to a variable so the Hyperfor isn't set as the `this` value inside `render()`
+		assertStatic(()=>{
+			let index = 0
+			while (itemIterator) {
+				const item = itemIterator
 				if (item.state === RenderState.add) {
-					D.dom.runInNodeContext(prevNode.parentNode, prevNode.nextSibling, ()=>{
-						item!.start = D.dom.node(document.createComment(item!.debugID))
-						item!.ctx.reset()
-						item!.ctx.resume(()=>{
-							this.render(item!.value)
+					item.indexSignal(index)
+
+					setInsertionState(prevNode.parentNode, prevNode.nextSibling, ()=>{
+						item.start = addNode(document.createComment(item!.debugID))
+						item.scope.resume(()=>{
+							render(item!.value, item.indexSignal)
 						})
-						item!.end = D.dom.node(document.createComment(item!.debugID))
+						item.end = addNode(document.createComment(item!.debugID))
 					})
 
 					prevNode = item.end!
 					rendered.push(item)
 
 					item.state = RenderState.keep
+					index++
 				} else if (item.state === RenderState.remove) {
 					const range = document.createRange()
 					range.setStartBefore(item.start!)
@@ -209,19 +164,26 @@ export default class Hyperfor<T> {
 					if (item.next) {
 						item.next.prev = item.prev
 					}
-					item.ctx.destroy()
+					item.scope.destroy()
 
 					// don't change prevNode
 				} else {
+					item.indexSignal(index)
+
 					//nothing to do, continue
 					prevNode = item.end!
 					rendered.push(item)
+
+					index++
 				}
 
-				item = item.next
+				itemIterator = item.next
 			}
 		})
-		this.toPatch = rendered
+		this.desiredState = rendered
 	}
 }
 
+export default function hyperfor<T>(arr: SignalArray<T>, render: (item: T, index: ()=>number) => void): void {
+	new Hyperfor(arr, render)
+}

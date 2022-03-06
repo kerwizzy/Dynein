@@ -1,25 +1,15 @@
-import DyneinState from "dynein-state";
-import DyneinDOM from "./dom.js";
-
 interface Plugin {
-	install: (D: DyneinType, options?: any) => void;
+	install: (options?: any) => void;
 }
 
 const currentlyAddedPlugins: Set<Plugin> = new Set();
-function usePlugin(plugin: Plugin, options?: any) {
+export function usePlugin(plugin: Plugin, options?: any) {
 	if (!currentlyAddedPlugins.has(plugin)) {
 		currentlyAddedPlugins.add(plugin);
-		plugin.install(D, options);
+		plugin.install(options);
 	}
 }
 
-const D = {
-	state: DyneinState,
-	dom: DyneinDOM,
-	use: usePlugin
-};
-type DyneinType = typeof D;
-
 export type { Plugin };
-export type { DataSignal, DestructionContext } from "dynein-state";
-export default D;
+export * from "@dynein/state";
+export * from "@dynein/dom";

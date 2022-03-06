@@ -1,0 +1,19 @@
+{
+  "name": "@dynein/signalarray",
+  "private": true,
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "types": "src/SignalArray.ts",
+  "main": "built/dynein-signalarray.js",
+
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+	"build": "esbuild src/SignalArray.ts --outfile=built/dynein-signalarray.js --format=esm --sourcemap --bundle"
+  },
+  "author": "kerwizzy",
+  "license": "MIT",
+  "dependencies": {
+    "@dynein/state": "^0.1.0"
+  }
+}

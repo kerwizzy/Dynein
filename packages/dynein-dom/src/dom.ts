@@ -1,4 +1,4 @@
-import DyneinState from "dynein-state";
+import { toSignal, onCleanup, assertStatic, createEffect, DestructionScope, batch, untrack, isSignal, sample, retrack, getScope, runInScope, createSignal } from "@dynein/state"
 
 type Primitive = string | number | boolean | undefined | null;
 
@@ -27,7 +27,7 @@ function replacementVRange(start: Node, end: Node, setupReplacements: (replaceIn
 	let isFirst = true;
 
 	let destroyed = false;
-	DyneinState.cleanup(() => {
+	onCleanup(() => {
 		destroyed = true;
 	});
 	setupReplacements((inner: () => void) => {
@@ -45,59 +45,14 @@ function replacementVRange(start: Node, end: Node, setupReplacements: (replaceIn
 		}
 
 		isFirst = false;
-		runInNodeContext(start.parentNode, end, ()=>{
-			DyneinState.expectStatic(inner)
+		setInsertionState(start.parentNode, end, ()=>{
+			assertStatic(inner)
 		});
 	});
 }
 
 const customPropertyHandlers: Map<string, (el: SVGElement | HTMLElement, val: Primitive) => void> =
 	new Map();
-
-// from https://github.com/kangax/html-minifier/blob/gh-pages/src/htmlminifier.js#L202
-const booleanAttributes = [
-	"allowfullscreen",
-	"async",
-	"autofocus",
-	"autoplay",
-	"checked",
-	"compact",
-	"controls",
-	"declare",
-	"default",
-	"defaultchecked",
-	"defaultmuted",
-	"defaultselected",
-	"defer",
-	"disabled",
-	"enabled",
-	"formnovalidate",
-	"hidden",
-	"indeterminate",
-	"inert",
-	"ismap",
-	"itemscope",
-	"loop",
-	"multiple",
-	"muted",
-	"nohref",
-	"noresize",
-	"noshade",
-	"novalidate",
-	"nowrap",
-	"open",
-	"pauseonexit",
-	"readonly",
-	"required",
-	"reversed",
-	"scoped",
-	"seamless",
-	"selected",
-	"sortable",
-	"truespeed",
-	"typemustmatch",
-	"visible"
-];
 
 function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
 	if (name.startsWith("on")) {
@@ -130,7 +85,7 @@ function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
 		for (const styleKey in val) {
 			const styleVal = val[styleKey]
 			if (typeof styleVal === "function") {
-				DyneinState.watch(() => {
+				createEffect(() => {
 					const rawVal = styleVal() ?? ""
 					el.style.setProperty(styleKey, rawVal)
 				});
@@ -155,35 +110,35 @@ type ElementTagNameMapForNamespace = {
 };
 
 // Internal variables and functions used when building DOM structures
-let currentNode: Node | null = null;
-let currentEndNode: Node | null = null;
+let insertTarget: Node | null = null;
+let insertBeforeNode: Node | null = null;
 
-function insertNode<T extends Node>(node: T): T {
-	if (currentNode === null) {
+export function addNode<T extends Node>(node: T): T {
+	if (insertTarget === null) {
 		throw new Error("not rendering");
 	}
-	currentNode.insertBefore(node, currentEndNode); // if currentEndNode is null, just added to end
+	insertTarget.insertBefore(node, insertBeforeNode); // if insertBeforeNode is null, just added to end
 	return node;
 }
 
-function runInNodeContext(
-	nodeForInner: Node | null,
-	endNodeForInner: Node | null,
+export function setInsertionState(
+	parentNode: Node | null,
+	beforeNode: Node | null,
 	inner: () => void
 ) {
-	const oldCurrentNode = currentNode;
-	const oldEndNode = currentEndNode;
-	currentNode = nodeForInner;
-	currentEndNode = endNodeForInner;
+	const oldCurrentNode = insertTarget;
+	const oldEndNode = insertBeforeNode;
+	insertTarget = parentNode;
+	insertBeforeNode = beforeNode;
 	try {
 		inner();
 	} finally {
-		currentNode = oldCurrentNode;
-		currentEndNode = oldEndNode;
+		insertTarget = oldCurrentNode;
+		insertBeforeNode = oldEndNode;
 	}
 }
 
-function stringifyForInner(val: Primitive): string {
+function stringify(val: Primitive): string {
 	return val?.toString() ?? "";
 }
 
@@ -217,12 +172,12 @@ function createAndInsertElement<
 				if (typeof val !== "function") {
 					throw new Error("Listeners must be functions.");
 				}
-				const ctx = new DyneinState.DestructionContext();
+				const scope = new DestructionScope();
 				el.addEventListener(attributeName.substring(2).toLowerCase(), function () {
-					ctx.reset();
-					ctx.resume(() => {
-						DyneinState.batch(()=>{
-							DyneinState.ignore(()=>{
+					scope.reset();
+					scope.resume(() => {
+						batch(()=>{
+							untrack(()=>{
 								//@ts-ignore
 								val.apply(this, arguments);
 							})
@@ -230,8 +185,7 @@ function createAndInsertElement<
 					});
 				});
 			} else if (typeof val === "function") {
-				//@ts-ignore
-				if (DyneinState.isDataSignal(val)) {
+				if (isSignal(val)) {
 					const updateEventName: string | undefined = updateEventTable[attributeName];
 					if (updateEventName) {
 						el.addEventListener(updateEventName, () => {
@@ -246,7 +200,7 @@ function createAndInsertElement<
 						//fallthrough to watch below
 					}
 				}
-				DyneinState.watch(() => {
+				createEffect(() => {
 					const rawVal =  val() ?? ""
 					setAttrOrProp(el, attributeName, rawVal);
 				});
@@ -259,12 +213,12 @@ function createAndInsertElement<
 	if (inner !== null) {
 		if (typeof inner === "function") {
 			//console.log(`<${tagName}>`)
-			runInNodeContext(el, null, () => {
+			setInsertionState(el, null, () => {
 				inner(el);
 			});
 			//console.log(`</${tagName}>`)
 		} else {
-			el.appendChild(document.createTextNode(stringifyForInner(inner)));
+			el.appendChild(document.createTextNode(stringify(inner)));
 		}
 	}
 
@@ -275,7 +229,7 @@ function createAndInsertElement<
 			//@ts-ignore
 			const val = attrs[attr]
 			if (typeof val === "function") {
-				const rawVal = DyneinState.sample(val) ?? ""
+				const rawVal = sample(val) ?? ""
 				setAttrOrProp(el, attr, rawVal);
 			} else {
 				setAttrOrProp(el, attr, (val as any) ?? "")
@@ -283,7 +237,7 @@ function createAndInsertElement<
 		}
 	}
 
-	insertNode(el);
+	addNode(el);
 	return el;
 }
 
@@ -326,149 +280,148 @@ function makeCreateElementsProxy<Namespace extends ElementNamespace>(namespace: 
 	});
 }
 
+export const elements = makeCreateElementsProxy("xhtml") as CreationProxy<"xhtml">
+export const svgElements = makeCreateElementsProxy("svg") as CreationProxy<"svg">
+
 let idCounter = 0
-const DyneinDOM = {
-	elements: makeCreateElementsProxy("xhtml") as CreationProxy<"xhtml">,
-	svgElements: makeCreateElementsProxy("svg") as CreationProxy<"svg">,
-	node<T extends Node>(node: T): T {
-		return insertNode(node);
-	},
-	id(): string {
-		return "__d"+(idCounter++)
-	},
-	html(html: string): void {
-		if (typeof html !== "string" && typeof html !== "number") {
-			throw new Error("HTML must be a string or number");
-		}
-		const tmp = document.createElement("template");
-		tmp.innerHTML = html;
-		const frag = tmp.content;
-		insertNode(frag);
-	},
-	text(val: Primitive | (() => Primitive)): Node {
-		const node = document.createTextNode("");
-		runInNodeContext(null, null, () => {
-			if (typeof val === "function") {
-				DyneinState.watch(() => {
-					node.textContent = stringifyForInner(val());
-				});
-			} else {
-				node.textContent = stringifyForInner(val);
-			}
-		});
-		return insertNode(node);
-	},
-	mount(el: Element, inner: () => void) {
-		const startNode = document.createComment("<portal>")
-		const endNode = document.createComment("</portal>")
-		el.appendChild(startNode);
-		el.appendChild(endNode);
-		DyneinState.cleanup(() => {
-			let range = document.createRange();
-			range.setStartBefore(startNode);
-			range.setEndAfter(endNode);
-			range.deleteContents();
-		});
-
-		DyneinState.expectStatic(()=>{
-			runInNodeContext(el, endNode, inner);
-		})
-	},
-	mountBody(inner: () => void) {
-		if (document.body) {
-			DyneinDOM.mount(document.body, inner);
+export function createUniqueId(): string {
+	return "__d"+(idCounter++)
+}
+export function addHTML(html: string): void {
+	if (typeof html !== "string" && typeof html !== "number") {
+		throw new Error("HTML must be a string or number");
+	}
+	const tmp = document.createElement("template");
+	tmp.innerHTML = html;
+	const frag = tmp.content;
+	addNode(frag);
+}
+export function addText(val: Primitive | (() => Primitive)): Node {
+	const node = document.createTextNode("");
+	setInsertionState(null, null, () => {
+		if (typeof val === "function") {
+			createEffect(() => {
+				node.textContent = stringify(val());
+			});
 		} else {
-			window.addEventListener("load", () => {
-				DyneinDOM.mount(document.body, inner);
-			});
+			node.textContent = stringify(val);
 		}
-	},
-	async(
-		setupReplacements: (
-			replaceInner: (inner: () => void) => void,
-			dependent: (inner: () => void) => void
-		) => void
-	) {
-		replacementVRange(
-			insertNode(document.createComment("<async>")),
-			insertNode(document.createComment("</async>")),
-			($r) => {
-				const saved = DyneinState.getContext()
-				const ctx = new DyneinState.DestructionContext()
-				setupReplacements((inner) => {
-					ctx.reset()
-					ctx.resume(()=>{
-						DyneinState.expectStatic(()=>{
-							$r(inner)
-						})
+	});
+	return addNode(node);
+}
+
+export function portalInto(parentNode: Node, beforeNode: Node | null, inner: () => void) {
+	const startNode = document.createComment("<portal>")
+	const endNode = document.createComment("</portal>")
+	parentNode.insertBefore(startNode, beforeNode)
+	parentNode.insertBefore(endNode, beforeNode)
+	onCleanup(() => {
+		const range = document.createRange();
+		range.setStartBefore(startNode);
+		range.setEndAfter(endNode);
+		range.deleteContents();
+	});
+
+	assertStatic(()=>{
+		setInsertionState(parentNode, endNode, inner);
+	})
+}
+
+export function mountBody(inner: () => void) {
+	if (document.body) {
+		portalInto(document.body, null, inner);
+	} else {
+		window.addEventListener("load", () => {
+			portalInto(document.body, null, inner);
+		});
+	}
+}
+
+export function addAsyncReplaceable(
+	setupReplacements: (
+		replaceInner: (inner: () => void) => void,
+		dependent: (inner: () => void) => void
+	) => void
+) {
+	replacementVRange(
+		addNode(document.createComment("<async>")),
+		addNode(document.createComment("</async>")),
+		($r) => {
+			const saved = getScope()
+			const scope = new DestructionScope()
+			setupReplacements((inner) => {
+				scope.reset()
+				scope.resume(()=>{
+					assertStatic(()=>{
+						$r(inner)
 					})
-				}, (inner: () => void)=>{
-					DyneinState.setContext(saved, inner)
-				});
-			}
-		);
-	},
-	replacer(inner: () => void) {
-		replacementVRange(
-			insertNode(document.createComment("<replacer>")),
-			insertNode(document.createComment("</replacer>")),
-			($r) => {
-				DyneinState.watch(() => {
-					$r(() => {
-						DyneinState.unignore(inner);
-					});
-				});
-			}
-		);
-	},
-	if(ifCond: () => any, inner: () => void) {
-		const conds: (() => boolean)[] = [];
-		const inners: (() => void)[] = []
-		const nConds = DyneinState.value(conds.length);
-		function addStage(cond: () => boolean, inner: () => void) {
-			conds.push(cond);
-			inners.push(inner)
-			nConds(conds.length)
-		}
-
-		const ifStageMaker = {
-			elseif(cond: () => any, inner: () => void) {
-				addStage(cond, inner);
-				return ifStageMaker;
-			},
-			else(inner: () => void): void {
-				addStage(() => true, inner);
-			}
-		};
-
-		addStage(ifCond, inner);
-
-		DyneinDOM.async(($r)=>{
-			let oldI = -1
-			DyneinState.watch(()=>{
-				for (let i = 0; i < nConds(); i++) {
-					if (conds[i]()) {
-						if (oldI !== i) {
-							oldI = i
-							$r(inners[i])
-						}
-						return;
-					}
-				}
-				oldI = -1
-				$r(()=>{})
+				})
+			}, (inner: () => void)=>{
+				runInScope(saved, inner)
 			});
-		})
-
-		return ifStageMaker;
-	},
-	customProperty(prop: string, handler: (el: SVGElement | HTMLElement, val: Primitive) => void) {
-		if (customPropertyHandlers.has(prop)) {
-			throw new Error("Custom handler already defined for property ." + prop);
 		}
-		customPropertyHandlers.set(prop, handler);
-	},
-	runInNodeContext: runInNodeContext
-};
+	);
+}
 
-export default DyneinDOM;
+export function addDynamic(inner: () => void) {
+	replacementVRange(
+		addNode(document.createComment("<dynamic>")),
+		addNode(document.createComment("</dynamic>")),
+		($r) => {
+			createEffect(() => {
+				$r(() => {
+					retrack(inner);
+				});
+			});
+		}
+	);
+}
+
+export function addIf(ifCond: () => any, inner: () => void) {
+	const conds: (() => boolean)[] = [];
+	const inners: (() => void)[] = []
+	const nConds = createSignal(conds.length);
+	function addStage(cond: () => boolean, inner: () => void) {
+		conds.push(cond);
+		inners.push(inner)
+		nConds(conds.length)
+	}
+
+	const ifStageMaker = {
+		elseif(cond: () => any, inner: () => void) {
+			addStage(cond, inner);
+			return ifStageMaker;
+		},
+		else(inner: () => void): void {
+			addStage(() => true, inner);
+		}
+	};
+
+	addStage(ifCond, inner);
+
+	addAsyncReplaceable(($r)=>{
+		let oldI = -1
+		createEffect(()=>{
+			for (let i = 0; i < nConds(); i++) {
+				if (conds[i]()) {
+					if (oldI !== i) {
+						oldI = i
+						$r(inners[i])
+					}
+					return;
+				}
+			}
+			oldI = -1
+			$r(()=>{})
+		});
+	})
+
+	return ifStageMaker;
+}
+
+export function defineCustomProperty(prop: string, handler: (el: SVGElement | HTMLElement, val: Primitive) => void) {
+	if (customPropertyHandlers.has(prop)) {
+		throw new Error("Custom handler already defined for property ." + prop);
+	}
+	customPropertyHandlers.set(prop, handler);
+}

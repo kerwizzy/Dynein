@@ -1,0 +1,18 @@
+{
+  "name": "@dynein/dom",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "types": "src/dom.ts",
+  "main": "built/dynein-dom.js",
+  "scripts": {
+	"watch": "tsc --watch",
+    "test": "mocha",
+	"build": "esbuild src/dom.ts --outfile=built/dynein-dom.js --format=esm --sourcemap --bundle"
+  },
+  "author": "kerwizzy",
+  "license": "MIT",
+  "dependencies": {
+    "@dynein/state": "^0.1.0"
+  }
+}

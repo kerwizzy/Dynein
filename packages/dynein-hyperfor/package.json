@@ -1,14 +1,21 @@
 {
   "name": "@dynein/hyperfor",
   "version": "0.0.1",
+  "private": true,
   "description": "",
-  "type":"module",
+  "type": "module",
   "types": "src/hyperfor.ts",
-  "main": "built/hyperfor.js",
+  "main": "built/dynein-hyperfor.js",
   "scripts": {
     "watch": "tsc --watch",
-    "test": "mocha"
+    "test": "mocha",
+	"build": "esbuild src/hyperfor.ts --outfile=built/dynein-hyperfor.js --format=esm --sourcemap --bundle"
   },
   "author": "kerwizzy",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@dynein/dom": "^0.1.0",
+    "@dynein/signalarray": "^0.1.0",
+    "@dynein/state": "^0.1.0"
+  }
 }

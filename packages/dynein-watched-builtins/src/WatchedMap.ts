@@ -1,17 +1,16 @@
-import { default as DyneinState, DataSignal } from "dynein-state"
+import { Signal, sample, isSignal, createSignal } from "@dynein/state"
 import WatchedValue from "./WatchedValue.js"
 
-export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
-	readonly value: DataSignal<Map<K, V>>;
 
-	constructor(iterable?: Iterable<readonly [K,V]> | null | undefined | DataSignal<Map<K,V>>) {
+export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
+	readonly value: Signal<Map<K, V>>;
+
+	constructor(iterable?: Iterable<readonly [K,V]> | null | undefined | Signal<Map<K,V>>) {
 		super();
-		if (DyneinState.isDataSignal(iterable)) {
+		if (isSignal(iterable)) {
 			this.value = iterable
-		} else if (iterable) {
-			this.value = DyneinState.data(new Map<K, V>(iterable));
 		} else {
-			this.value = DyneinState.data(new Map())
+			this.value = createSignal(new Map<K, V>(iterable as any), true);
 		}
 	}
 

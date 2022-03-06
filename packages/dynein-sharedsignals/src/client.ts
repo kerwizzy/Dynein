@@ -1,4 +1,4 @@
-import { default as DyneinState, DataSignal } from "dynein-state";
+import * as D from "@dynein/state";
 import {
 	SharedStateEndpoint,
 	SetMessage,
@@ -149,13 +149,13 @@ export class SharedStateClient extends SharedStateEndpoint {
 	_makeOrGetSignal<T>(key: string, init: T, updateOnEqual: boolean): { cached: boolean, signal: SharedSignal<T> } {
 		const result = super._makeOrGetSignal(key, init, updateOnEqual);
 		if (!result.cached) {
-			this.send({ cmd: "get", key, init: this.serialize(DyneinState.sample(result.signal) as any), updateOnEqual });
+			this.send({ cmd: "get", key, init: this.serialize(D.sample(result.signal) as any), updateOnEqual });
 		}
 		return result;
 	}
 
 	forceRefresh(signal: SharedSignal<any>) {
-		this.send({ cmd: "get", key: signal.key, init: this.serialize(DyneinState.sample(signal) as any), updateOnEqual: signal.sharedSignalUpdateOnEqual });
+		this.send({ cmd: "get", key: signal.key, init: this.serialize(D.sample(signal) as any), updateOnEqual: signal.sharedSignalUpdateOnEqual });
 	}
 
 	private rpcIDCounter = 0;

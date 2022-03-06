@@ -4,17 +4,18 @@
   "version": "0.1.0",
   "description": "",
   "type": "module",
-  "main": "built/index.js",
+  "main": "built/dynein-sharedsignals.js",
   "types": "src/index.ts",
   "scripts": {
     "watch": "tsc --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+	"build": "esbuild src/index.ts --outfile=built/dynein-sharedsignals.js --format=esm --sourcemap --bundle"
   },
   "author": "kerwizzy",
   "license": "ISC",
   "dependencies": {
+    "@dynein/state": "^0.1.0",
     "@types/double-ended-queue": "^2.1.1",
-    "double-ended-queue": "^2.1.0-0",
-    "dynein-state": "file:../dynein-state"
+    "double-ended-queue": "^2.1.0-0"
   }
 }

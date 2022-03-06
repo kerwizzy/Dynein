@@ -4,10 +4,11 @@
   "description": "",
   "type":"module",
   "types": "src/kroma.ts",
-  "main": "built/kroma.js",
+  "main": "built/dynein-kroma.js",
   "scripts": {
     "watch": "tsc --watch",
-    "test": "mocha"
+    "test": "mocha",
+	"build": "esbuild src/kroma.ts --outfile=built/dynein-kroma.js --format=esm --sourcemap --bundle"
   },
   "author": "kerwizzy",
   "license": "MIT"

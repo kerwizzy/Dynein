@@ -11,13 +11,17 @@
   "author": "kerwizzy",
   "license": "MIT",
   "workspaces": [
-    "./packages/*"
+    "./packages/dynein-state",
+	"./packages/dynein-watched-builtins",
+	"./packages/dynein-signalarray",
+	"./packages/dynein-dom",
+	"./packages/dynein-hyperfor",
+	"./packages/dynein-sharedsignals",
+	"./packages/dynein-kroma",
+	"./packages/dynein"
   ],
   "devDependencies": {
     "chai": "^4.3.4",
     "sinon": "^11.1.1"
-  },
-  "dependencies": {
-    "@dynein/sharedsignals": "file:packages/dynein-sharedsignals"
   }
 }
