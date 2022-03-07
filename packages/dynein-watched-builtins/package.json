@@ -5,12 +5,12 @@
   "description": "",
   "type": "module",
   "types": "src/index.ts",
-  "main": "built/dynein-watched-builtins.js",
+  "main": "built/index.js",
   "author": "kerwizzy",
   "license": "MIT",
   "scripts": {
     "watch": "tsc --watch",
-	"build": "esbuild src/index.ts --outfile=built/dynein-watched-builtins.js --format=esm --sourcemap --bundle"
+	"build": "tsc"
   },
   "dependencies": {
     "@dynein/state": "^0.1.0"

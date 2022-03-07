@@ -1,6 +1,6 @@
-import { assertStatic, createEffect, createSignal, DestructionScope, getScope, onCleanup, onUpdate, runInScope, Signal } from "@dynein/state"
+import { assertStatic, createEffect, createSignal, DestructionScope, getScope, onCleanup, onUpdate, runInScope, sample, Signal } from "@dynein/state"
 import { addNode, setInsertionState } from "@dynein/dom"
-import SignalArray from "@dynein/signalarray"
+import { WatchedArray } from "@dynein/watched-builtins"
 
 enum RenderState {
 	keep,
@@ -29,28 +29,47 @@ interface ItemPatchState<T> {
 class Hyperfor<T> {
 	private startItem: ItemPatchState<T> | null = null
 	private desiredState: ItemPatchState<T>[] = []
-	private arr: SignalArray<T>
+	private arr: WatchedArray<T>
 	private start: Node
-	//private end: Node
+	private end: Node
 	private render: (item: T, index: ()=>number) => void
-	private scope: DestructionScope | null | undefined
+	private scope: DestructionScope
 
-	constructor(arr: SignalArray<T>, render: (item: T, index: ()=>number) => void) {
+	private patchScheduled: boolean = false
+
+	constructor(arr: WatchedArray<T>, render: (item: T, index: ()=>number) => void) {
 		this.render = render
 		this.start = addNode(document.createComment("<hyperfor>"))
-		//this.end = addNode(document.createComment("</hyperfor>"))
+		this.end = addNode(document.createComment("</hyperfor>"))
 
-		this.scope = getScope()
+		this.scope = new DestructionScope()
 		this.arr = arr
 
-		this.setupInitialPatch()
-		this.patch()
+		this.reset()
 		this.setupSpliceWatcher()
 	}
 
-	private setupInitialPatch() {
+	private clear() {
+		if (this.start.previousSibling === null && this.end.nextSibling === null) {
+			const parent = this.start.parentNode!
+			parent.textContent = ""
+			parent.appendChild(this.start)
+			parent.appendChild(this.end)
+		} else {
+			const range = document.createRange()
+			range.setStartAfter(this.start)
+			range.setEndBefore(this.end)
+			range.deleteContents()
+		}
+		this.scope.reset()
+		this.desiredState = []
+	}
+
+	private reset() {
+		this.clear()
+
 		let prev: null | ItemPatchState<T> = null
-		const arr = this.arr.value()
+		const arr = sample(this.arr.value)
 		for (const item of arr) {
 			const state: ItemPatchState<T> = {
 				state: RenderState.add,
@@ -71,18 +90,21 @@ class Hyperfor<T> {
 			this.desiredState.push(state)
 			prev = state
 		}
+
+		this.patch()
 	}
 
 	private setupSpliceWatcher() {
 		onUpdate(this.arr.spliceEvent, (evt) => {
-			if (evt) {
+			if (!evt) {
+				this.reset()
+			} else {
+				const [start, added, removed] = evt
 
-				const [start, removeLength, added, removed] = evt
-
-				for (let i = start; i<start+removeLength; i++) {
+				for (let i = start; i<start+removed.length; i++) {
 					this.desiredState[i].state = RenderState.remove
 				}
-				const afterIndex = start+removeLength
+				const afterIndex = start+removed.length
 				const lastRemoved = afterIndex >= 1 ? this.desiredState[afterIndex-1] : null
 				let prev = lastRemoved
 
@@ -120,12 +142,25 @@ class Hyperfor<T> {
 					}
 				}
 
-				this.desiredState.splice(start, removeLength, ...toInsert)
+				this.desiredState.splice(start, removed.length, ...toInsert)
+
+				this.schedulePatch()
 			}
 		})
 	}
 
+	private schedulePatch() {
+		if (this.patchScheduled) {
+			return
+		}
+		this.patchScheduled = true
+		requestAnimationFrame(()=>{
+			this.patch()
+		})
+	}
+
 	private patch() {
+		this.patchScheduled = false
 		const rendered: ItemPatchState<T>[] = []
 		let itemIterator = this.startItem
 		let prevNode = this.start
@@ -184,6 +219,6 @@ class Hyperfor<T> {
 	}
 }
 
-export default function hyperfor<T>(arr: SignalArray<T>, render: (item: T, index: ()=>number) => void): void {
+export default function hyperfor<T>(arr: WatchedArray<T>, render: (item: T, index: ()=>number) => void): void {
 	new Hyperfor(arr, render)
 }

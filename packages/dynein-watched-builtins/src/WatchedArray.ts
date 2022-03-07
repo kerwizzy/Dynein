@@ -1,18 +1,33 @@
-import { createSignal, Signal, sample } from "@dynein/state"
+import { createSignal, Signal, sample, isSignal, toSignal, subclock } from "@dynein/state"
+import WatchedValue from "./WatchedValue.js"
 
-export default class SignalArray<T> {
+export default class WatchedArray<T> extends WatchedValue<T[]> {
 	readonly value: Signal<T[]>
-	readonly spliceEvent: Signal<[startIndex: number, removeLength: number, added: T[], removed: T[]] | null>
+	readonly spliceEvent: Signal<[startIndex: number, added: T[], removed: T[]] | null>
 
-	constructor(iterable?: Iterable<T>) {
-		this.value = createSignal(iterable ? Array.from(iterable) : [], true)
-		this.spliceEvent = createSignal<[startIndex: number, removeLength: number, added: T[], removed: T[]] | null>(null)
+	constructor(iterable?: Iterable<T> | Signal<T[]> | null | undefined) {
+		super()
+
+		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? Array.from(iterable as Iterable<T>) : [], true)
+
+		this.value = toSignal(()=>baseSignal(), (value: T[]) => {
+			if (value !== sample(baseSignal)) {
+				// used in Hyperfor to detect an overwrite of the entire array. Hyperfor can't just
+				// listen on array.value() because that gets fired for every .splice
+				this.spliceEvent(null)
+			}
+			baseSignal(value)
+		})
+
+		this.spliceEvent = createSignal<[startIndex: number, added: T[], removed: T[]] | null>(null, true)
 	}
 
-	private get v() {
-		return sample(this.value);
+	map<U>(fn: (value: T, index: number, array: T[]) => U): U[] {
+		return this.value().map(fn)
 	}
-
+	slice(start?: number, end?: number): T[] {
+		return this.value().slice(start, end)
+	}
 	every(pred: (element: T, index: number) => boolean): boolean {
 		return this.value().every(pred)
 	}
@@ -40,14 +55,25 @@ export default class SignalArray<T> {
 	[Symbol.iterator]() {
 		return this.value()[Symbol.iterator]()
 	}
-
-	private fire() {
-		this.value(sample(this.value))
+	get length() {
+		return this.value().length
 	}
 
 	splice(start: number, remove: number, ...insert: T[]) {
+		if (start < 0) {
+			throw new Error("Cannot splice before the beginning of the array")
+		}
+		if (start > this.v.length) {
+			throw new Error("Cannot splice after the end of the array")
+		}
 		const removed = this.v.splice(start, remove, ...insert)
-		this.spliceEvent([start, remove, removed, insert])
+
+		// Use subclock to ensure that any listeners on spliceEvent fire for each splice, not just
+		// at the end if we're inside a batch.
+		subclock(()=>{
+			this.spliceEvent([start, insert, removed])
+		})
+
 		this.fire()
 		return removed
 	}

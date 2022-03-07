@@ -310,7 +310,19 @@ export function addText(val: Primitive | (() => Primitive)): Node {
 	return addNode(node);
 }
 
-export function portalInto(parentNode: Node, beforeNode: Node | null, inner: () => void) {
+export function addPortal(parentNode: Node, inner: () => void): void
+export function addPortal(parentNode: Node, beforeNode: Node | null, inner: () => void): void
+export function addPortal(parentNode: Node, beforeOrInner: Node | null | (()=>void), maybeInner?: () => void) {
+	let inner: ()=>void
+	let beforeNode: Node | null
+	if (typeof beforeOrInner === "function") {
+		inner = beforeOrInner
+		beforeNode = null
+	} else {
+		inner = maybeInner!
+		beforeNode = beforeOrInner
+	}
+
 	const startNode = document.createComment("<portal>")
 	const endNode = document.createComment("</portal>")
 	parentNode.insertBefore(startNode, beforeNode)
@@ -329,10 +341,10 @@ export function portalInto(parentNode: Node, beforeNode: Node | null, inner: () 
 
 export function mountBody(inner: () => void) {
 	if (document.body) {
-		portalInto(document.body, null, inner);
+		addPortal(document.body, null, inner);
 	} else {
 		window.addEventListener("load", () => {
-			portalInto(document.body, null, inner);
+			addPortal(document.body, null, inner);
 		});
 	}
 }

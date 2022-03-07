@@ -1,10 +1,10 @@
 import { createRootScope, createSignal, toSignal, createEffect, batch } from "@dynein/state"
-import { portalInto, elements, addIf, addAsyncReplaceable, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
+import { addPortal, elements, addIf, addAsyncReplaceable, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
 
 function mount(inner) {
 	let test
 	createRootScope(()=>{
-		portalInto(document.createElement("div"), null, ()=>{
+		addPortal(document.createElement("div"), null, ()=>{
 			test = elements.div(inner)
 		})
 	})

@@ -5,17 +5,17 @@
   "description": "",
   "type": "module",
   "types": "src/hyperfor.ts",
-  "main": "built/dynein-hyperfor.js",
+  "main": "built/hyperfor.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",
-	"build": "esbuild src/hyperfor.ts --outfile=built/dynein-hyperfor.js --format=esm --sourcemap --bundle"
+	"build": "tsc"
   },
   "author": "kerwizzy",
   "license": "MIT",
   "dependencies": {
     "@dynein/dom": "^0.1.0",
-    "@dynein/signalarray": "^0.1.0",
+    "@dynein/watched-builtins": "^0.1.0",
     "@dynein/state": "^0.1.0"
   }
 }

@@ -1,5 +1,5 @@
 const DEBUG = false;
-const dataSignalSymbol = Symbol("dataSignalSymbol");
+const isSignalSymbol = Symbol("isSignal");
 
 // Internal state variables
 let assertedStatic = false;
@@ -123,11 +123,7 @@ export class DestructionScope implements Destructable {
 	}
 }
 
-export type Signal<T> = {
-	(): T;
-	(newVal: T): T;
-	readonly [dataSignalSymbol]: true;
-};
+export type Signal<T> = (()=> T) & ((newVal: T) => T)
 
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
@@ -145,7 +141,8 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 		}
 	} as Signal<T>;
 	//@ts-ignore
-	signalWrapper[dataSignalSymbol] = true;
+	signalWrapper[isSignalSymbol] = true;
+	//@ts-ignore
 	return signalWrapper;
 }
 
@@ -159,11 +156,12 @@ export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal
 	// make GC of signal and handler be linked. (This is important for @dynein/shared-state)
 	handler.dependents.add(signal);
 
+	//@ts-ignore
 	return signal;
 }
 
 export function isSignal(thing: any): thing is Signal<any> {
-	return thing && thing[dataSignalSymbol] === true;
+	return thing && thing[isSignalSymbol] === true;
 }
 
 export function createEffect(fn: () => void): Destructable {

@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "types": "src/state.ts",
-  "main": "built/dynein-state.js",
+  "main": "built/state.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",
-	"build": "esbuild src/state.ts --outfile=built/dynein-state.js --format=esm --sourcemap --bundle"
+	"build": "tsc"
   },
   "author": "kerwizzy"
 }

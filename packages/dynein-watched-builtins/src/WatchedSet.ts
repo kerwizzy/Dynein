@@ -9,7 +9,7 @@ export default class WatchedSet<T> extends WatchedValue<Set<T>> {
 		if (isSignal(iterable)) {
 			this.value = iterable
 		} else {
-			this.value = createSignal(new Set(iterable as any), true);
+			this.value = createSignal<Set<T>>(iterable ? new Set(iterable as Iterable<T>) : new Set(), true);
 		}
 	}
 
