@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, createMemo, createRoot, onCleanup, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState } from "../built/state.js";
+import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRootScope, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState } from "../built/state.js";
 
 
 
@@ -71,10 +71,10 @@ describe("@dynein/state", () => {
 		});
 	});
 
-	describe("createRoot", () => {
+	describe("createRootScope", () => {
 		it("passes errors", () => {
 			assert.throws(() => {
-				createRoot(() => {
+				createRootScope(() => {
 					throw new Error("err");
 				});
 			});
@@ -83,7 +83,7 @@ describe("@dynein/state", () => {
 		it("restores current computation after throw", () => {
 			const before = _getInternalState().currentOwnerScope;
 			try {
-				createRoot(() => {
+				createRootScope(() => {
 					throw new Error("err");
 				});
 			} catch (err) {}
@@ -93,13 +93,13 @@ describe("@dynein/state", () => {
 
 	describe("createEffect", () => {
 		it("disallows 0 arguments", () => {
-			createRoot(() => {
+			createRootScope(() => {
 				assert.throws(() => createEffect());
 			});
 		});
 
 		it("creates a watcher", () => {
-			createRoot(() => {
+			createRootScope(() => {
 				assert.doesNotThrow(() => {
 					const signal = createSignal(0);
 					createEffect(() => {
@@ -112,7 +112,7 @@ describe("@dynein/state", () => {
 		it("reexecutes on dependency update", () => {
 			const signal = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -127,7 +127,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -144,7 +144,7 @@ describe("@dynein/state", () => {
 		it("does not reexecute on equal value update", () => {
 			const signal = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -158,7 +158,7 @@ describe("@dynein/state", () => {
 		it("does reexecute on equal data update", () => {
 			const signal = createSignal(0, true);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -174,7 +174,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					if (!phase()) {
@@ -201,7 +201,7 @@ describe("@dynein/state", () => {
 			let signal = createSignal(0);
 			let outerCount = 0;
 			let innerCount = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					outerCount++;
 					createEffect(() => {
@@ -222,7 +222,7 @@ describe("@dynein/state", () => {
 			let signal = createSignal(0);
 			let outerCount = 0;
 			let innerCount = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					outerCount++;
 					if (innerWatch()) {
@@ -249,7 +249,7 @@ describe("@dynein/state", () => {
 		it("handles destruction of parent within child", ()=>{
 			let order = "";
 			const a = createSignal("")
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(()=>{
 					order += "outer{"
 					const b = createSignal("")
@@ -278,7 +278,7 @@ describe("@dynein/state", () => {
 			let signal = createSignal(0);
 			let cleanupACount = 0;
 			let cleanupBCount = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					if (innerWatch()) {
 						createEffect(() => {
@@ -313,7 +313,7 @@ describe("@dynein/state", () => {
 			const signal = createSignal(0);
 			let count = 0;
 			let watcher;
-			createRoot(() => {
+			createRootScope(() => {
 				watcher = createEffect(() => {
 					count++;
 					signal();
@@ -328,7 +328,7 @@ describe("@dynein/state", () => {
 		});
 
 		it("does not leak the internal Computation instance", () => {
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(function () {
 					assert.strictEqual(this, undefined);
 				});
@@ -336,7 +336,7 @@ describe("@dynein/state", () => {
 		});
 
 		it("passes errors", () => {
-			createRoot(() => {
+			createRootScope(() => {
 				assert.throws(() => {
 					createEffect(() => {
 						throw new Error("err");
@@ -346,7 +346,7 @@ describe("@dynein/state", () => {
 		});
 
 		it("restores current computation after throw", () => {
-			createRoot(() => {
+			createRootScope(() => {
 				const before = _getInternalState().currentOwnerScope;
 				try {
 					createEffect(() => {
@@ -360,7 +360,7 @@ describe("@dynein/state", () => {
 		it("keeps running if there are more changes", () => {
 			const signal = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					if (signal() >= 1 && signal() < 5) {
@@ -415,7 +415,7 @@ describe("@dynein/state", () => {
 			*/
 
 			let order = "";
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					order += "D{";
 					p3();
@@ -468,7 +468,7 @@ describe("@dynein/state", () => {
 			*/
 
 			let order = "";
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					order += "C{";
 					p4(p2() + 1);
@@ -521,7 +521,7 @@ describe("@dynein/state", () => {
 			*/
 
 			let order = "";
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					order += "C{";
 					p4(p2() + 1);
@@ -553,7 +553,7 @@ describe("@dynein/state", () => {
 		it("delays execution when in watch init", () => {
 			const signal = createSignal(0);
 			let order = "";
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					order += "A{";
 					signal();
@@ -572,7 +572,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(1);
 			const signal = createSignal(0);
 			let order = "";
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					order += "A{";
 					signal();
@@ -593,7 +593,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0)
 			let order = ""
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(()=>{
 					order += "A{"+a()
 					order += "}A "
@@ -626,7 +626,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0)
 			let order = ""
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(()=>{
 					order += "A{"+a()
 					order += "}A "
@@ -676,7 +676,7 @@ describe("@dynein/state", () => {
 			}
 
 
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(()=>{
 					log("A{"+a())
 					log("}A ")
@@ -720,7 +720,7 @@ describe("@dynein/state", () => {
 		})
 
 		it("Sjs issue 32", ()=>{
-			createRoot(() => {
+			createRootScope(() => {
 				const data = createSignal(null, true)
 				const cache = createSignal(sample(() => !!data()))
 				const child = data => {
@@ -748,7 +748,7 @@ describe("@dynein/state", () => {
 			const b = createSignal(false);
 
 			let order = "";
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					order += "outer ";
 					if (!a()) {
@@ -788,7 +788,7 @@ describe("@dynein/state", () => {
 		it("blocks dependency collection", () => {
 			let count = 0;
 			let signal = createSignal(0);
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					untrack(() => {
@@ -810,7 +810,7 @@ describe("@dynein/state", () => {
 		});
 
 		it("restores current computation after throw", () => {
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					const before = _getInternalState().currentOwnerScope;
 					try {
@@ -900,7 +900,7 @@ describe("@dynein/state", () => {
 		it("cancels untrack", () => {
 			let count = 0;
 			let signal = createSignal(0);
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					untrack(() => {
@@ -981,7 +981,7 @@ describe("@dynein/state", () => {
 				}
 			);
 
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -998,7 +998,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -1023,7 +1023,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -1042,7 +1042,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRoot(() => {
+			createRootScope(() => {
 				createEffect(() => {
 					count++;
 					a();

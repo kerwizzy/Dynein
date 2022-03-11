@@ -1,14 +1,14 @@
 {
   "name": "@dynein/state",
-  "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "types": "src/state.ts",
   "main": "built/state.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",
-	"build": "tsc"
+    "build": "rm -rf ./built && tsc",
+    "prepare": "npm run build"
   },
   "author": "kerwizzy"
 }

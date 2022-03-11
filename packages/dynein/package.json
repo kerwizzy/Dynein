@@ -1,6 +1,6 @@
 {
   "name": "dynein",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "",
   "type": "module",
   "main": "built/index.js",
@@ -8,7 +8,8 @@
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",
-    "build": "tsc"
+    "build": "rm -rf ./built && tsc",
+    "prepare": "npm run build"
   },
   "author": "kerwizzy",
   "license": "MIT",

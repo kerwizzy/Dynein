@@ -6,7 +6,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "esbuild packages/dynein/src/index.ts --outfile=dist/dynein.min.js --format=esm --minify --bundle"
+    "build": "esbuild packages/dynein/src/index.ts --outfile=dist/dynein.min.js --format=esm --minify --bundle",
+	"prepare": "npm run build --workspaces"
   },
   "author": "kerwizzy",
   "license": "MIT",

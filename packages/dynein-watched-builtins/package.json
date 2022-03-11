@@ -1,7 +1,6 @@
 {
   "name": "@dynein/watched-builtins",
-  "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "",
   "type": "module",
   "types": "src/index.ts",
@@ -10,7 +9,8 @@
   "license": "MIT",
   "scripts": {
     "watch": "tsc --watch",
-	"build": "tsc"
+    "build": "rm -rf ./built && tsc",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@dynein/state": "^0.1.0"
