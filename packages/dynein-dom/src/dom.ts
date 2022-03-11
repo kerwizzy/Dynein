@@ -94,7 +94,7 @@ function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
 			}
 		}
 	} else {
-		if (el.namespaceURI === "http://www.w3.org/2000/svg") {
+		if (el.namespaceURI === "http://www.w3.org/2000/svg" || name.startsWith("data-")) {
 			el.setAttribute(name, val)
 		} else {
 			//@ts-ignore
@@ -375,7 +375,7 @@ export function addAsyncReplaceable(
 	);
 }
 
-export function addDynamic(inner: () => void) {
+export function addDynamic(inner: () => void): void {
 	replacementVRange(
 		addNode(document.createComment("<dynamic>")),
 		addNode(document.createComment("</dynamic>")),
