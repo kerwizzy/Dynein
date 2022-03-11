@@ -1,10 +1,10 @@
 {
   "name": "@dynein/dom",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "",
   "type": "module",
   "types": "src/dom.ts",
-  "main": "built/dom.js",
+  "browser": "built/dom.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",
@@ -15,5 +15,11 @@
   "license": "MIT",
   "dependencies": {
     "@dynein/state": "^0.1.0"
+  },
+  "homepage": "https://github.com/kerwizzy/Dynein/",
+  "bugs": "https://github.com/kerwizzy/Dynein/issues",
+  "repository": {
+    "url": "https://github.com/kerwizzy/Dynein.git",
+    "type": "git"
   }
 }

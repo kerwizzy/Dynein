@@ -1,6 +1,6 @@
 {
   "name": "@dynein/state",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "types": "src/state.ts",
   "main": "built/state.js",
@@ -10,5 +10,11 @@
     "build": "rm -rf ./built && tsc",
     "prepare": "npm run build"
   },
-  "author": "kerwizzy"
+  "author": "kerwizzy",
+  "homepage": "https://github.com/kerwizzy/Dynein/",
+  "bugs": "https://github.com/kerwizzy/Dynein/issues",
+  "repository": {
+    "url": "https://github.com/kerwizzy/Dynein.git",
+    "type": "git"
+  }
 }
