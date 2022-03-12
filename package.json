@@ -1,13 +1,13 @@
 {
   "name": "dynein-monorepo",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "esbuild packages/dynein/src/index.ts --outfile=dist/dynein.min.js --format=esm --minify --bundle",
-	"prepare": "npm run build --workspaces"
+    "prepare": "npm run build --workspaces"
   },
   "author": "kerwizzy",
   "license": "MIT",
