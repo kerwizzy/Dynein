@@ -4,7 +4,7 @@
   "description": "",
   "type": "module",
   "types": "src/dom.ts",
-  "browser": "built/dom.js",
+  "main": "built/dom.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",

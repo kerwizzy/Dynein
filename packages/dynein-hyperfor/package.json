@@ -4,7 +4,7 @@
   "description": "",
   "type": "module",
   "types": "src/hyperfor.ts",
-  "browser": "built/hyperfor.js",
+  "main": "built/hyperfor.js",
   "scripts": {
     "watch": "tsc --watch",
     "test": "mocha",
