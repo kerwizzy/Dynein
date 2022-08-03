@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRootScope, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState } from "../built/state.js";
+import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRootScope, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, DestructionScope, getScope } from "../built/state.js";
 
 
 
@@ -1038,6 +1038,7 @@ describe("@dynein/state", () => {
 			});
 		});
 
+
 		it("allows ports to update more than once", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
@@ -1065,4 +1066,61 @@ describe("@dynein/state", () => {
 			});
 		});
 	});
+
+	describe("onCleanup", ()=>{
+
+		it("can trigger an effect update without causing an infinite loop", ()=>{
+			const sig = createSignal(0)
+			const scope = new DestructionScope()
+			scope.resume(()=>{
+				createEffect(() => {
+					const val = sig()
+					onCleanup(()=>{
+						sig(sig()+1)
+					})
+				})
+			})
+			assert.strictEqual(sig(), 0);
+			assert.doesNotThrow(()=>sig(1))
+			assert.strictEqual(sig(), 2);
+		})
+
+		it("isolates scope", ()=>{
+			const sig = createSignal(0)
+			const scope = new DestructionScope()
+			let innerScope = "a"
+			scope.resume(()=>{
+				createEffect(() => {
+					const val = sig()
+					onCleanup(()=>{
+						innerScope = getScope()
+					})
+				})
+				sig(1)
+			})
+
+			assert.strictEqual(innerScope, undefined);
+		})
+
+		it("isolates errors", () => {
+			const sig = createSignal(0)
+			const scope = new DestructionScope()
+			let log = ""
+			scope.resume(()=>{
+				createEffect(() => {
+					const val = sig()
+					onCleanup(()=>{
+						log += "a"
+						throw new Error("Test err")
+					})
+					onCleanup(()=>{
+						log += "b"
+					})
+				})
+			})
+			assert.strictEqual(log, "");
+			assert.doesNotThrow(()=>sig(1))
+			assert.strictEqual(log, "ab");
+		})
+	})
 });

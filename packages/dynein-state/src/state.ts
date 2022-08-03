@@ -64,6 +64,10 @@ export interface Destructable {
 	parent: DestructionScope | null;
 }
 
+// Any scopes created as root (i.e., with `parentScope` null or undefined)
+// are added to this object so that the scopes will never be garbage collected.
+const rootScopes = new Set<any>()
+
 let debugIDCounter = 0;
 // A simple tree for destroying all descendant contexts when an ancestor is destroyed
 export class DestructionScope implements Destructable {
@@ -80,7 +84,12 @@ export class DestructionScope implements Destructable {
 		if (parentScope === undefined) {
 			console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 		}
-		parentScope?.addChild(this);
+
+		if (!parentScope) {
+			rootScopes.add(this);
+		} else {
+			parentScope.addChild(this);
+		}
 	}
 
 	addChild(thing: Destructable) {
@@ -110,11 +119,16 @@ export class DestructionScope implements Destructable {
 		if (DEBUG) {
 			console.log(`DestructionScope@${this.debugID}: reset`);
 		}
-		for (const child of this.children) {
+		const children = this.children
+
+		// if one of the child destructors triggers `reset` again, we don't
+		// want it to rerun `reset` with the same list, because that would cause an infinite loop
+		this.children = new Set()
+
+		for (const child of children) {
 			child.parent = null;
 			child.destroy();
 		}
-		this.children.clear();
 	}
 
 	resume(fn: () => void) {
@@ -123,7 +137,7 @@ export class DestructionScope implements Destructable {
 	}
 }
 
-export type Signal<T> = (()=> T) & ((newVal: T) => T)
+export type Signal<T> = (()=> T) & ((newVal: T) => T) & {[isSignalSymbol]: true}
 
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
@@ -152,8 +166,10 @@ export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal
 		() => handler.read(),
 		(val) => handler.write(val, fireWhenEqual)
 	);
+	// the above makes GC of `handler` depend on GC of `signal`
 
-	// make GC of signal and handler be linked. (This is important for @dynein/shared-state)
+	// This makes GC of `signal` depends on GC of `handler`, so now
+	// GC of signal and handler are linked. (This is important for @dynein/shared-state)
 	handler.dependents.add(signal);
 
 	//@ts-ignore
@@ -195,7 +211,16 @@ export function createMemo<T>(fn: () => T, fireWhenEqual: boolean = false): () =
 
 
 export function onCleanup(fn: () => void) {
-	currentOwnerScope?.addChild({ destroy: fn, parent: null });
+	if (currentOwnerScope === undefined) {
+		console.trace("Destructables created outside of a `createRoot` will never be disposed.")
+	}
+	currentOwnerScope?.addChild({ destroy: ()=>{
+		try {
+			runInScope(undefined, fn)
+		} catch (err) {
+			console.warn("Caught error in cleanup function:",err)
+		}
+	}, parent: null });
 }
 
 export function batch(fn: () => void) {
@@ -304,6 +329,7 @@ class UpdateQueue {
 			// again on the next tick
 			return;
 		}
+
 		this.parent?.unschedule(key);
 		this.nextTick.set(key, fn);
 		this.start();
