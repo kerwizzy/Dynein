@@ -1,4 +1,4 @@
-import { assertStatic, createEffect, createSignal, DestructionScope, getScope, onCleanup, onUpdate, runInScope, sample, Signal } from "@dynein/state"
+import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal } from "@dynein/state"
 import { addNode, setInsertionState } from "@dynein/dom"
 import { WatchedArray } from "@dynein/watched-builtins"
 
@@ -19,7 +19,7 @@ interface ItemPatchState<T> {
 	prev: ItemPatchState<T> | null
 	next: ItemPatchState<T> | null
 
-	scope: DestructionScope
+	owner: Owner
 
 	indexSignal: Signal<number>
 
@@ -33,7 +33,7 @@ class Hyperfor<T> {
 	private start: Node
 	private end: Node
 	private render: (item: T, index: ()=>number) => void
-	private scope: DestructionScope
+	private owner: Owner
 
 	private patchScheduled: boolean = false
 
@@ -42,7 +42,7 @@ class Hyperfor<T> {
 		this.start = addNode(document.createComment("<hyperfor>"))
 		this.end = addNode(document.createComment("</hyperfor>"))
 
-		this.scope = new DestructionScope()
+		this.owner = new Owner()
 		this.arr = arr
 
 		this.reset()
@@ -61,7 +61,7 @@ class Hyperfor<T> {
 			range.setEndBefore(this.end)
 			range.deleteContents()
 		}
-		this.scope.reset()
+		this.owner.reset()
 		this.desiredState = []
 	}
 
@@ -79,7 +79,7 @@ class Hyperfor<T> {
 				start: null,
 				end: null,
 				indexSignal: createSignal(0),
-				scope: new DestructionScope(this.scope),
+				owner: new Owner(this.owner),
 				debugID: "dbg_"+Math.random().toString(16).substring(2, 8)
 			}
 			if (prev) {
@@ -122,7 +122,7 @@ class Hyperfor<T> {
 						prev: prev,
 						next: null,
 						indexSignal: createSignal(0),
-						scope: new DestructionScope(this.scope),
+						owner: new Owner(this.owner),
 						debugID
 					}
 					if (prev === null) {
@@ -174,7 +174,7 @@ class Hyperfor<T> {
 
 					setInsertionState(prevNode.parentNode, prevNode.nextSibling, ()=>{
 						item.start = addNode(document.createComment(item!.debugID))
-						item.scope.resume(()=>{
+						runWithOwner(item.owner, ()=>{
 							render(item!.value, item.indexSignal)
 						})
 						item.end = addNode(document.createComment(item!.debugID))
@@ -199,7 +199,7 @@ class Hyperfor<T> {
 					if (item.next) {
 						item.next.prev = item.prev
 					}
-					item.scope.destroy()
+					item.owner.destroy()
 
 					// don't change prevNode
 				} else {

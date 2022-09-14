@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRootScope, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, DestructionScope, getScope } from "../built/state.js";
+import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner } from "../built/state.js";
 
 
 
@@ -71,35 +71,35 @@ describe("@dynein/state", () => {
 		});
 	});
 
-	describe("createRootScope", () => {
+	describe("createRoot", () => {
 		it("passes errors", () => {
 			assert.throws(() => {
-				createRootScope(() => {
+				createRoot(() => {
 					throw new Error("err");
 				});
 			});
 		});
 
 		it("restores current computation after throw", () => {
-			const before = _getInternalState().currentOwnerScope;
+			const before = _getInternalState().currentOwnerOwner;
 			try {
-				createRootScope(() => {
+				createRoot(() => {
 					throw new Error("err");
 				});
 			} catch (err) {}
-			assert.strictEqual(_getInternalState().currentOwnerScope, before);
+			assert.strictEqual(_getInternalState().currentOwnerOwner, before);
 		});
 	});
 
 	describe("createEffect", () => {
 		it("disallows 0 arguments", () => {
-			createRootScope(() => {
+			createRoot(() => {
 				assert.throws(() => createEffect());
 			});
 		});
 
 		it("creates a watcher", () => {
-			createRootScope(() => {
+			createRoot(() => {
 				assert.doesNotThrow(() => {
 					const signal = createSignal(0);
 					createEffect(() => {
@@ -112,7 +112,7 @@ describe("@dynein/state", () => {
 		it("reexecutes on dependency update", () => {
 			const signal = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -127,7 +127,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -144,7 +144,7 @@ describe("@dynein/state", () => {
 		it("does not reexecute on equal value update", () => {
 			const signal = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -158,7 +158,7 @@ describe("@dynein/state", () => {
 		it("does reexecute on equal data update", () => {
 			const signal = createSignal(0, true);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -174,7 +174,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					if (!phase()) {
@@ -201,7 +201,7 @@ describe("@dynein/state", () => {
 			let signal = createSignal(0);
 			let outerCount = 0;
 			let innerCount = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					outerCount++;
 					createEffect(() => {
@@ -222,7 +222,7 @@ describe("@dynein/state", () => {
 			let signal = createSignal(0);
 			let outerCount = 0;
 			let innerCount = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					outerCount++;
 					if (innerWatch()) {
@@ -249,7 +249,7 @@ describe("@dynein/state", () => {
 		it("handles destruction of parent within child", ()=>{
 			let order = "";
 			const a = createSignal("")
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(()=>{
 					order += "outer{"
 					const b = createSignal("")
@@ -278,7 +278,7 @@ describe("@dynein/state", () => {
 			let signal = createSignal(0);
 			let cleanupACount = 0;
 			let cleanupBCount = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					if (innerWatch()) {
 						createEffect(() => {
@@ -313,7 +313,7 @@ describe("@dynein/state", () => {
 			const signal = createSignal(0);
 			let count = 0;
 			let watcher;
-			createRootScope(() => {
+			createRoot(() => {
 				watcher = createEffect(() => {
 					count++;
 					signal();
@@ -328,7 +328,7 @@ describe("@dynein/state", () => {
 		});
 
 		it("does not leak the internal Computation instance", () => {
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(function () {
 					assert.strictEqual(this, undefined);
 				});
@@ -336,7 +336,7 @@ describe("@dynein/state", () => {
 		});
 
 		it("passes errors", () => {
-			createRootScope(() => {
+			createRoot(() => {
 				assert.throws(() => {
 					createEffect(() => {
 						throw new Error("err");
@@ -346,21 +346,21 @@ describe("@dynein/state", () => {
 		});
 
 		it("restores current computation after throw", () => {
-			createRootScope(() => {
-				const before = _getInternalState().currentOwnerScope;
+			createRoot(() => {
+				const before = _getInternalState().currentOwnerOwner;
 				try {
 					createEffect(() => {
 						throw new Error("err");
 					});
 				} catch (err) {}
-				assert.strictEqual(_getInternalState().currentOwnerScope, before);
+				assert.strictEqual(_getInternalState().currentOwnerOwner, before);
 			});
 		});
 
 		it("keeps running if there are more changes", () => {
 			const signal = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					if (signal() >= 1 && signal() < 5) {
@@ -415,7 +415,7 @@ describe("@dynein/state", () => {
 			*/
 
 			let order = "";
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					order += "D{";
 					p3();
@@ -468,7 +468,7 @@ describe("@dynein/state", () => {
 			*/
 
 			let order = "";
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					order += "C{";
 					p4(p2() + 1);
@@ -521,7 +521,7 @@ describe("@dynein/state", () => {
 			*/
 
 			let order = "";
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					order += "C{";
 					p4(p2() + 1);
@@ -553,7 +553,7 @@ describe("@dynein/state", () => {
 		it("delays execution when in watch init", () => {
 			const signal = createSignal(0);
 			let order = "";
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					order += "A{";
 					signal();
@@ -572,7 +572,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(1);
 			const signal = createSignal(0);
 			let order = "";
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					order += "A{";
 					signal();
@@ -593,7 +593,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0)
 			let order = ""
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(()=>{
 					order += "A{"+a()
 					order += "}A "
@@ -626,7 +626,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0)
 			let order = ""
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(()=>{
 					order += "A{"+a()
 					order += "}A "
@@ -676,7 +676,7 @@ describe("@dynein/state", () => {
 			}
 
 
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(()=>{
 					log("A{"+a())
 					log("}A ")
@@ -720,7 +720,7 @@ describe("@dynein/state", () => {
 		})
 
 		it("Sjs issue 32", ()=>{
-			createRootScope(() => {
+			createRoot(() => {
 				const data = createSignal(null, true)
 				const cache = createSignal(sample(() => !!data()))
 				const child = data => {
@@ -748,7 +748,7 @@ describe("@dynein/state", () => {
 			const b = createSignal(false);
 
 			let order = "";
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					order += "outer ";
 					if (!a()) {
@@ -788,7 +788,7 @@ describe("@dynein/state", () => {
 		it("blocks dependency collection", () => {
 			let count = 0;
 			let signal = createSignal(0);
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					untrack(() => {
@@ -810,15 +810,15 @@ describe("@dynein/state", () => {
 		});
 
 		it("restores current computation after throw", () => {
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
-					const before = _getInternalState().currentOwnerScope;
+					const before = _getInternalState().currentOwnerOwner;
 					try {
 						untrack(() => {
 							throw new Error("err");
 						});
 					} catch (err) {}
-					assert.strictEqual(_getInternalState().currentOwnerScope, before);
+					assert.strictEqual(_getInternalState().currentOwnerOwner, before);
 				});
 			});
 		});
@@ -900,7 +900,7 @@ describe("@dynein/state", () => {
 		it("cancels untrack", () => {
 			let count = 0;
 			let signal = createSignal(0);
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					untrack(() => {
@@ -981,7 +981,7 @@ describe("@dynein/state", () => {
 				}
 			);
 
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					signal();
@@ -998,7 +998,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -1023,7 +1023,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -1043,7 +1043,7 @@ describe("@dynein/state", () => {
 			const a = createSignal(0);
 			const b = createSignal(0);
 			let count = 0;
-			createRootScope(() => {
+			createRoot(() => {
 				createEffect(() => {
 					count++;
 					a();
@@ -1071,8 +1071,8 @@ describe("@dynein/state", () => {
 
 		it("can trigger an effect update without causing an infinite loop", ()=>{
 			const sig = createSignal(0)
-			const scope = new DestructionScope()
-			scope.resume(()=>{
+			const owner = new Owner()
+			runWithOwner(owner, ()=>{
 				createEffect(() => {
 					const val = sig()
 					onCleanup(()=>{
@@ -1085,28 +1085,28 @@ describe("@dynein/state", () => {
 			assert.strictEqual(sig(), 2);
 		})
 
-		it("isolates scope", ()=>{
+		it("isolates owner", ()=>{
 			const sig = createSignal(0)
-			const scope = new DestructionScope()
-			let innerScope = "a"
-			scope.resume(()=>{
+			const owner = new Owner()
+			let innerOwner = "a"
+			runWithOwner(owner, ()=>{
 				createEffect(() => {
 					const val = sig()
 					onCleanup(()=>{
-						innerScope = getScope()
+						innerOwner = getOwner()
 					})
 				})
 				sig(1)
 			})
 
-			assert.strictEqual(innerScope, undefined);
+			assert.strictEqual(innerOwner, undefined);
 		})
 
 		it("isolates errors", () => {
 			const sig = createSignal(0)
-			const scope = new DestructionScope()
+			const owner = new Owner()
 			let log = ""
-			scope.resume(()=>{
+			runWithOwner(owner, ()=>{
 				createEffect(() => {
 					const val = sig()
 					onCleanup(()=>{

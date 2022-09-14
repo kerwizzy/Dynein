@@ -1,9 +1,9 @@
-import { createRootScope, createSignal, toSignal, createEffect, batch } from "@dynein/state"
+import { createRoot, createSignal, toSignal, createEffect, batch } from "@dynein/state"
 import { addPortal, elements, addIf, addAsyncReplaceable, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
 
 function mount(inner) {
 	let test
-	createRootScope(()=>{
+	createRoot(()=>{
 		addPortal(document.createElement("div"), null, ()=>{
 			test = elements.div(inner)
 		})

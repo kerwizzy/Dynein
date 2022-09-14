@@ -5,99 +5,100 @@ const isSignalSymbol = Symbol("isSignal");
 let assertedStatic = false;
 let collectingDependencies = true;
 
-let currentOwnerScope:
-	| DestructionScope
+let currentOwner:
+	| Owner
 	| null /* root on purpose */
 	| undefined /* root probably not on purpose, so create a warning */ = undefined;
 
 function updateState<T>(
 	new_assertedStatic: boolean,
 	new_collectingDependencies: boolean,
-	new_currentOwnerScope: DestructionScope | null | undefined,
+	new_currentOwner: Owner | null | undefined,
 	inner: () => T
 ) {
 	const old_assertedStatic = assertedStatic;
 	const old_collectingDependencies = collectingDependencies;
-	const old_currentOwnerScope = currentOwnerScope;
+	const old_currentOwner = currentOwner;
 
 	assertedStatic = new_assertedStatic;
 	collectingDependencies = new_collectingDependencies;
-	currentOwnerScope = new_currentOwnerScope;
+	currentOwner = new_currentOwner;
 	try {
 		return inner();
 	} finally {
 		assertedStatic = old_assertedStatic;
 		collectingDependencies = old_collectingDependencies;
-		currentOwnerScope = old_currentOwnerScope;
+		currentOwner = old_currentOwner;
 	}
 }
 
 export function _getInternalState() {
-	return { assertedStatic, collectingDependencies, currentOwnerScope }
+	return { assertedStatic, collectingDependencies, currentOwner }
 }
 
 export function untrack<T>(inner: () => T): T {
-	return updateState(false, false, currentOwnerScope, inner);
+	return updateState(false, false, currentOwner, inner);
 }
 export function retrack<T>(inner: () => T): T {
-	return updateState(assertedStatic, true, currentOwnerScope, inner);
+	return updateState(assertedStatic, true, currentOwner, inner);
 }
 
 const sample = untrack;
 export { sample };
 
 export function assertStatic<T>(inner: () => T): T {
-	return updateState(true, false, currentOwnerScope, inner);
+	return updateState(true, false, currentOwner, inner);
 }
-export function runInScope<T>(owner: DestructionScope | null | undefined, inner: () => T) {
+export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T) {
 	return updateState(assertedStatic, collectingDependencies, owner, inner);
 }
-export function getScope(): DestructionScope | null | undefined {
-	return currentOwnerScope;
+export function getOwner(): Owner | null | undefined {
+	return currentOwner;
 }
-export function createRootScope<T>(inner: ()=>T): T {
-	return runInScope(null, inner)
+export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
+	const owner = new Owner(null)
+	return runWithOwner(owner, ()=>inner(()=>owner.destroy()))
 }
 
 export interface Destructable {
 	destroy(): void;
-	parent: DestructionScope | null;
+	parent: Owner | null;
 }
 
-// Any scopes created as root (i.e., with `parentScope` null or undefined)
-// are added to this object so that the scopes will never be garbage collected.
-const rootScopes = new Set<any>()
+// Any owners created as root (i.e., with `parent` null or undefined)
+// are added to this object so that the owners will never be garbage collected.
+const rootOwners = new Set<any>()
 
 let debugIDCounter = 0;
 // A simple tree for destroying all descendant contexts when an ancestor is destroyed
-export class DestructionScope implements Destructable {
+export class Owner implements Destructable {
 	debugID: string;
 	protected children: Set<Destructable> = new Set();
 	protected destroyed: boolean = false;
-	parent: DestructionScope | null = null;
+	parent: Owner | null = null;
 
-	constructor(parentScope: DestructionScope | null | undefined = currentOwnerScope) {
+	constructor(parent: Owner | null | undefined = currentOwner) {
 		this.debugID = (debugIDCounter++).toString();
 		if (DEBUG) {
-			console.trace(`DestructionScope@${this.debugID}: create`);
+			console.trace(`Owner@${this.debugID}: create`);
 		}
-		if (parentScope === undefined) {
+		if (parent === undefined) {
 			console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 		}
 
-		if (!parentScope) {
-			rootScopes.add(this);
+		if (!parent) {
+			rootOwners.add(this);
 		} else {
-			parentScope.addChild(this);
+			parent.addChild(this);
 		}
 	}
 
 	addChild(thing: Destructable) {
 		if (DEBUG) {
-			console.log(`DestructionScope@${this.debugID}: add child`, thing);
+			console.log(`Owner@${this.debugID}: add child`, thing);
 		}
 		if (this.destroyed) {
-			throw new Error(`DestructionScope@${this.debugID}: Can't add to destroyed context.`);
+			throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
 		}
 		thing.parent = this;
 		this.children.add(thing);
@@ -105,7 +106,7 @@ export class DestructionScope implements Destructable {
 
 	destroy() {
 		if (DEBUG) {
-			console.log(`DestructionScope@${this.debugID}: destroy`);
+			console.log(`Owner@${this.debugID}: destroy`);
 		}
 		this.destroyed = true;
 		if (this.parent) {
@@ -117,7 +118,7 @@ export class DestructionScope implements Destructable {
 
 	reset() {
 		if (DEBUG) {
-			console.log(`DestructionScope@${this.debugID}: reset`);
+			console.log(`Owner@${this.debugID}: reset`);
 		}
 		const children = this.children
 
@@ -130,14 +131,9 @@ export class DestructionScope implements Destructable {
 			child.destroy();
 		}
 	}
-
-	resume(fn: () => void) {
-		// Notice does NOT call reset
-		runInScope(this, fn);
-	}
 }
 
-export type Signal<T> = (()=> T) & ((newVal: T) => T) & {[isSignalSymbol]: true}
+export type Signal<T> = (()=> T) & (<U extends T>(newVal: U) => U) & {[isSignalSymbol]: true}
 
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
@@ -161,7 +157,7 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 }
 
 export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal<T> {
-	const handler = new SimpleValueHandler(init);
+	const handler = new DependencyHandler(init);
 	const signal = toSignal(
 		() => handler.read(),
 		(val) => handler.write(val, fireWhenEqual)
@@ -209,14 +205,13 @@ export function createMemo<T>(fn: () => T, fireWhenEqual: boolean = false): () =
 	return () => internalSignal();
 }
 
-
 export function onCleanup(fn: () => void) {
-	if (currentOwnerScope === undefined) {
+	if (currentOwner === undefined) {
 		console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 	}
-	currentOwnerScope?.addChild({ destroy: ()=>{
+	currentOwner?.addChild({ destroy: ()=>{
 		try {
-			runInScope(undefined, fn)
+			runWithOwner(undefined, fn)
 		} catch (err) {
 			console.warn("Caught error in cleanup function:",err)
 		}
@@ -340,10 +335,10 @@ let currentUpdateQueue = new UpdateQueue();
 
 // Internal class created by createEffect. Collects dependencies of `fn` and rexecutes `fn` when
 // dependencies update.
-class Effect extends DestructionScope {
+class Effect extends Owner {
 	private fn: () => void;
 	private sources: Set<DependencyHandler<any>>;
-	boundExec: () => void;
+	private boundExec: () => void;
 	private executing: boolean = false;
 	private pendingDestroy: boolean = false;
 
@@ -363,10 +358,12 @@ class Effect extends DestructionScope {
 			return;
 		}
 
-		this.removeSources();
+		for (const src of this.sources) {
+			src.removeDrain(this);
+		}
+		this.sources.clear();
 		try {
 			this.executing = true;
-
 			updateState(false, true, this, this.fn);
 		} finally {
 			this.executing = false;
@@ -389,30 +386,25 @@ class Effect extends DestructionScope {
 		currentUpdateQueue.schedule(this, this.boundExec);
 	}
 
-	removeSources() {
-		for (let src of this.sources) {
-			src.removeDrain(this);
-		}
-		this.sources.clear();
-	}
 }
 
-function findParentComputation(c: DestructionScope | null | undefined): Effect | null | undefined {
-	return c && (c instanceof Effect ? c : findParentComputation(c.parent));
+function findParentEffect(c: Owner | null | undefined): Effect | null | undefined {
+	return c && (c instanceof Effect ? c : findParentEffect(c.parent));
 }
 
-abstract class DependencyHandler<T> {
-	abstract value: T;
+class DependencyHandler<T> {
+	value: T;
 	drains: Set<Effect>;
 
 	dependents: Set<any> = new Set(); //for GC stuff
 
-	constructor() {
+	constructor(value: T) {
+		this.value = value
 		this.drains = new Set();
 	}
 
 	read(): T {
-		const currentComputation = findParentComputation(currentOwnerScope);
+		const currentComputation = findParentEffect(currentOwner);
 		if (collectingDependencies && currentComputation) {
 			currentComputation.addSource(this);
 			this.addDrain(currentComputation);
@@ -422,26 +414,17 @@ abstract class DependencyHandler<T> {
 		return this.value;
 	}
 
-	fire(val: T, doWrite: boolean, updateOnEqual: boolean) {
+	write(val: T, updateOnEqual: boolean) {
 		currentUpdateQueue.delayStart(() => {
-			let changedValue = false;
-			if (doWrite) {
-				if (sample(() => this.value) !== val) {
-					changedValue = true;
-				}
-				this.value = val;
-			}
+			const changedValue = this.value !== val;
+			this.value = val;
 
-			if (!doWrite || updateOnEqual || changedValue) {
+			if (updateOnEqual || changedValue) {
 				for (let drain of this.drains) {
 					drain.schedule();
 				}
 			}
 		});
-	}
-
-	write(val: T, updateOnEqual: boolean) {
-		this.fire(val, true, updateOnEqual);
 	}
 
 	addDrain(comp: Effect) {
@@ -450,14 +433,5 @@ abstract class DependencyHandler<T> {
 
 	removeDrain(comp: Effect) {
 		this.drains.delete(comp);
-	}
-}
-
-class SimpleValueHandler<T> extends DependencyHandler<T> {
-	value: T;
-
-	constructor(init: T) {
-		super();
-		this.value = init;
 	}
 }

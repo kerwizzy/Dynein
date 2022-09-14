@@ -4,7 +4,7 @@ import { WatchedArray } from "@dynein/watched-builtins"
 import { assert } from "chai"
 
 function mount(inner) {
-	D.createRootScope(()=>{
+	D.createRoot(()=>{
 		D.addPortal(document.body, inner)
 	})
 }

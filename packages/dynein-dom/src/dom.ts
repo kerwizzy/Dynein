@@ -1,4 +1,4 @@
-import { toSignal, onCleanup, assertStatic, createEffect, DestructionScope, batch, untrack, isSignal, sample, retrack, getScope, runInScope, createSignal } from "@dynein/state"
+import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal } from "@dynein/state"
 
 type Primitive = string | number | boolean | undefined | null;
 
@@ -55,29 +55,12 @@ const customPropertyHandlers: Map<string, (el: SVGElement | HTMLElement, val: Pr
 	new Map();
 
 function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
-	if (name.startsWith("on")) {
-		throw new Error("Unexpected state")
-	}
-
 	if (customPropertyHandlers.has(name)) {
 		let handler = customPropertyHandlers.get(name)!;
 		handler(el, val);
 		return;
 	}
 
-	/*
-	if (name === "style") {
-		el.style.cssText = stringifyForInner(val);
-	} else if (booleanAttributes.includes(name.toLowerCase())) {
-		if (val) {
-			el.setAttribute(name, "true");
-		} else {
-			el.removeAttribute(name);
-		}
-	} else {
-		// @ts-ignore
-		el.setAttribute(name, val);
-	}*/
 	if (name === "style" && typeof val === "object") {
 		for (const styleKey in val) {
 			const styleVal = val[styleKey]
@@ -172,10 +155,10 @@ function createAndInsertElement<
 				if (typeof val !== "function") {
 					throw new Error("Listeners must be functions.");
 				}
-				const scope = new DestructionScope();
+				const owner = new Owner();
 				el.addEventListener(attributeName.substring(2).toLowerCase(), function () {
-					scope.reset();
-					scope.resume(() => {
+					owner.reset();
+					runWithOwner(owner, () => {
 						batch(()=>{
 							untrack(()=>{
 								//@ts-ignore
@@ -359,17 +342,17 @@ export function addAsyncReplaceable(
 		addNode(document.createComment("<async>")),
 		addNode(document.createComment("</async>")),
 		($r) => {
-			const saved = getScope()
-			const scope = new DestructionScope()
+			const saved = getOwner()
+			const owner = new Owner()
 			setupReplacements((inner) => {
-				scope.reset()
-				scope.resume(()=>{
+				owner.reset()
+				runWithOwner(owner, ()=>{
 					assertStatic(()=>{
 						$r(inner)
 					})
 				})
 			}, (inner: () => void)=>{
-				runInScope(saved, inner)
+				runWithOwner(saved, inner)
 			});
 		}
 	);

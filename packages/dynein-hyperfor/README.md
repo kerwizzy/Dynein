@@ -17,7 +17,7 @@ import { WatchedArray } from "@dynein/watched-builtins"
 
 
 const arr = new WatchedArray([1,2,3])
-D.createRootScope(()=>{
+D.createRoot(()=>{
 	D.mountBody(()=>{
 		hyperfor(arr, (item) => {
 			D.addText(item)
