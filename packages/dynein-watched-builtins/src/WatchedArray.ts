@@ -14,9 +14,18 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 			if (value !== sample(baseSignal)) {
 				// used in Hyperfor to detect an overwrite of the entire array. Hyperfor can't just
 				// listen on array.value() because that gets fired for every .splice
-				this.spliceEvent(null)
+
+				// Update this before firing spliceEvent because the handlers in Hyperfor will need
+				// to read the updated array value
+				baseSignal(value)
+
+				// See comment below in .splice for why subclock is needed
+				subclock(()=>{
+					this.spliceEvent(null)
+				})
+			} else {
+				baseSignal(value)
 			}
-			baseSignal(value)
 		})
 
 		this.spliceEvent = createSignal<[startIndex: number, added: T[], removed: T[]] | null>(null, true)

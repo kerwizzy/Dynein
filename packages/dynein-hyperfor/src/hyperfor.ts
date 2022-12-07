@@ -63,6 +63,7 @@ class Hyperfor<T> {
 		}
 		this.owner.reset()
 		this.desiredState = []
+		this.startItem = null
 	}
 
 	private reset() {
@@ -107,6 +108,7 @@ class Hyperfor<T> {
 				const afterIndex = start+removed.length
 				const lastRemoved = afterIndex >= 1 ? this.desiredState[afterIndex-1] : null
 				let prev = lastRemoved
+				const afterInsert = prev ? prev.next : this.startItem
 
 				const toInsert: ItemPatchState<T>[] = []
 
@@ -134,12 +136,11 @@ class Hyperfor<T> {
 					toInsert.push(state)
 				}
 
-				if (afterIndex < this.desiredState.length) {
-					const afterRender = this.desiredState[afterIndex]
-					if (prev) {
-						prev.next = afterRender
-						afterRender.prev = prev
-					}
+				if (prev) {
+					prev.next = afterInsert
+				}
+				if (afterInsert) {
+					afterInsert.prev = prev
 				}
 
 				this.desiredState.splice(start, removed.length, ...toInsert)
@@ -175,7 +176,11 @@ class Hyperfor<T> {
 					setInsertionState(prevNode.parentNode, prevNode.nextSibling, ()=>{
 						item.start = addNode(document.createComment(item!.debugID))
 						runWithOwner(item.owner, ()=>{
-							render(item!.value, item.indexSignal)
+							try {
+								render(item!.value, item.indexSignal)
+							} catch (err) {
+								console.warn("Caught error while rendering item", item.value, ": ", err)
+							}
 						})
 						item.end = addNode(document.createComment(item!.debugID))
 					})
@@ -187,9 +192,14 @@ class Hyperfor<T> {
 					index++
 				} else if (item.state === RenderState.remove) {
 					const range = document.createRange()
-					range.setStartBefore(item.start!)
-					range.setEndAfter(item.end!)
-					range.deleteContents()
+
+					// If it was actually rendered, which it might not have been (if an item is added
+					// and removed between patches)
+					if (item.start) {
+						range.setStartBefore(item.start!)
+						range.setEndAfter(item.end!)
+						range.deleteContents()
+					}
 
 					if (item.prev) {
 						item.prev.next = item.next
