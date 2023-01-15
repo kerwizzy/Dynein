@@ -3,7 +3,7 @@ const isSignalSymbol = Symbol("isSignal");
 
 // Internal state variables
 let assertedStatic = false;
-let collectingDependencies = true;
+let collectingDependencies = false;
 
 let currentOwner:
 	| Owner
@@ -49,15 +49,40 @@ export { sample };
 export function assertStatic<T>(inner: () => T): T {
 	return updateState(true, false, currentOwner, inner);
 }
-export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T) {
-	return updateState(assertedStatic, collectingDependencies, owner, inner);
+export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
+	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, inner);
 }
 export function getOwner(): Owner | null | undefined {
-	return currentOwner;
+	if (!currentOwner) {
+		return currentOwner;
+	} else if (currentOwner.collectingDependencies === collectingDependencies && currentOwner.assertedStatic === assertedStatic) {
+		return currentOwner
+	} else {
+		/* TODO: Maybe change this because it might cause unexpected behavior for .destroy()?
+
+		e.g., with
+
+			innerOwner
+			createEffect(()=>{
+				untrack(()=>{
+					innerOwner = getOwner()
+				})
+			})
+
+		This won't do anything:
+			innerOwner.destroy()
+
+		Could fix this by adding some flag in Owner, like .destroyParentOnDestroyCall
+
+		*/
+		return new Owner(currentOwner)
+	}
 }
 export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
-	const owner = new Owner(null)
-	return runWithOwner(owner, ()=>inner(()=>owner.destroy()))
+	return updateState(false, false, currentOwner, ()=>{
+		const owner = new Owner(null)
+		return runWithOwner(owner, ()=>inner(()=>owner.destroy()))
+	})
 }
 
 export interface Destructable {
@@ -77,8 +102,20 @@ export class Owner implements Destructable {
 	protected destroyed: boolean = false;
 	parent: Owner | null = null;
 
+	readonly assertedStatic: boolean
+	readonly collectingDependencies: boolean
+
+	protected createContext: any
+	protected destroyContext: any
+
 	constructor(parent: Owner | null | undefined = currentOwner) {
 		this.debugID = (debugIDCounter++).toString();
+
+		this.createContext = new Error(`Create Owner@${this.debugID}`)
+
+		this.assertedStatic = assertedStatic
+		this.collectingDependencies = collectingDependencies
+
 		if (DEBUG) {
 			console.trace(`Owner@${this.debugID}: create`);
 		}
@@ -95,9 +132,10 @@ export class Owner implements Destructable {
 
 	addChild(thing: Destructable) {
 		if (DEBUG) {
-			console.log(`Owner@${this.debugID}: add child`, thing);
+			//console.log(`Owner@${this.debugID}: add child`, thing);
 		}
 		if (this.destroyed) {
+			console.log(this.createContext, this.destroyContext)
 			throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
 		}
 		thing.parent = this;
@@ -105,6 +143,7 @@ export class Owner implements Destructable {
 	}
 
 	destroy() {
+		this.destroyContext = new Error(`Destroy Owner@${this.debugID}`)
 		if (DEBUG) {
 			console.log(`Owner@${this.debugID}: destroy`);
 		}
@@ -222,6 +261,10 @@ export function batch(fn: () => void) {
 	currentUpdateQueue.delayStart(fn);
 }
 
+export function onBatchEnd(fn: ()=>void) {
+	currentUpdateQueue.schedule(fn)
+}
+
 export function subclock(fn: () => void) {
 	currentUpdateQueue.subclock(fn);
 }
@@ -240,15 +283,15 @@ declare var console: Console;
 // Internal class to keep track of pending updates
 class UpdateQueue {
 	parent: UpdateQueue | null;
-	thisTick: Map<any, () => void>;
-	nextTick: Map<any, () => void>;
+	thisTick: Set<() => void>;
+	nextTick: Set<() => void>;
 	ticking: boolean;
 	startDelayed: boolean;
 
 	constructor(parent: UpdateQueue | null = null) {
 		this.parent = parent;
-		this.thisTick = new Map();
-		this.nextTick = new Map();
+		this.thisTick = new Set();
+		this.nextTick = new Set();
 		this.ticking = false;
 		this.startDelayed = false;
 	}
@@ -260,7 +303,6 @@ class UpdateQueue {
 
 		let subTickN = 0;
 		this.ticking = true;
-		let firstErr;
 		while (true) {
 			const tmp = this.thisTick;
 			this.thisTick = this.nextTick;
@@ -276,29 +318,26 @@ class UpdateQueue {
 			}
 
 			subTickN++;
-			for (const [key, fn] of this.thisTick) {
-				this.thisTick.delete(key);
+			for (const fn of this.thisTick) {
+				this.thisTick.delete(fn);
 				try {
 					fn();
 				} catch (err) {
 					console.warn("Caught error", err, "in tick function", fn);
-					if (!firstErr) {
-						firstErr = err;
-					}
 				}
 			}
 		}
 		this.ticking = false;
-		if (firstErr) {
-			throw firstErr;
-		}
 	}
 
 	subclock(fn: () => void) {
 		const oldUpdateQueue = currentUpdateQueue;
 		currentUpdateQueue = new UpdateQueue(this);
-		fn();
-		currentUpdateQueue = oldUpdateQueue;
+		try {
+			fn();
+		} finally {
+			currentUpdateQueue = oldUpdateQueue;
+		}
 	}
 
 	delayStart(fn: () => void) {
@@ -312,21 +351,21 @@ class UpdateQueue {
 		}
 	}
 
-	unschedule(key: any) {
-		this.thisTick.delete(key);
-		this.nextTick.delete(key);
-		this.parent?.unschedule(key);
+	unschedule(fn: any) {
+		this.thisTick.delete(fn);
+		this.nextTick.delete(fn);
+		this.parent?.unschedule(fn);
 	}
 
-	schedule(key: any, fn: () => void) {
-		if (this.ticking && this.thisTick.has(key)) {
+	schedule(fn: () => void) {
+		if (this.ticking && this.thisTick.has(fn)) {
 			// if this is already scheduled on the current tick but not started yet, don't schedule it
 			// again on the next tick
 			return;
 		}
 
-		this.parent?.unschedule(key);
-		this.nextTick.set(key, fn);
+		this.parent?.unschedule(fn);
+		this.nextTick.add(fn);
 		this.start();
 	}
 }
@@ -336,9 +375,9 @@ let currentUpdateQueue = new UpdateQueue();
 // Internal class created by createEffect. Collects dependencies of `fn` and rexecutes `fn` when
 // dependencies update.
 class Effect extends Owner {
-	private fn: () => void;
-	private sources: Set<DependencyHandler<any>>;
-	private boundExec: () => void;
+	private readonly fn: () => void;
+	private readonly sources: Set<DependencyHandler<any>>;
+	private readonly boundExec: () => void;
 	private executing: boolean = false;
 	private pendingDestroy: boolean = false;
 
@@ -383,7 +422,7 @@ class Effect extends Owner {
 
 	schedule() {
 		this.reset(); // Destroy subwatchers
-		currentUpdateQueue.schedule(this, this.boundExec);
+		currentUpdateQueue.schedule(this.boundExec);
 	}
 
 }

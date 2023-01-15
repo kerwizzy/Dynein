@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner } from "../built/state.js";
+import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner } from "../built/state.js";
 
 
 
@@ -719,6 +719,45 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{subclock{inner{1 B{1}B }inner }subclock }b++ }s A{2}A s{2 a++{}a++ b++{subclock{inner{2 B{2}B }inner }subclock }b++ }s A{3}A s{3 }s ");
 		})
 
+		it("subclock passes errors without breaking parent update", () => {
+			const a = createSignal(0);
+			const b = createSignal(0)
+			let order = ""
+			createRoot(() => {
+				createEffect(()=>{
+					order += "A{"+a()
+					order += "}A "
+				})
+				createEffect(()=>{
+					order += "B{"+b()
+					order += "}B "
+				})
+				createEffect(() => {
+					order += "s{"+a()+" "
+					if (a() >= 1 && a() < 3) {
+						order += "a++{"
+						a(a() + 1);
+						order += "}a++ "
+
+						order += "b++{"
+						subclock(()=>{
+							order += "Sclock{"
+							b(sample(b) + 1)
+							throw new Error("test")
+						})
+						order += "}b++ "
+					}
+					order += "}s "
+				});
+			});
+			assert.strictEqual(order, "A{0}A B{0}B s{0 }s ");
+			order = ""
+			a(1)
+			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{Sclock{B{1}B A{2}A s{2 a++{}a++ b++{Sclock{B{2}B A{3}A s{3 }s ");
+		})
+
+		// See https://github.com/adamhaile/S/issues/32
+		// Basically, the data().length shouldn't be run when data() is null
 		it("Sjs issue 32", ()=>{
 			createRoot(() => {
 				const data = createSignal(null, true)
@@ -831,8 +870,11 @@ describe("@dynein/state", () => {
 		});
 
 		it("pops collectingDependencies state (true)", () => {
-			untrack(() => {});
-			assert.strictEqual(_getInternalState().collectingDependencies, true);
+			assert.strictEqual(_getInternalState().collectingDependencies, false);
+			createEffect(()=>{
+				untrack(() => {});
+				assert.strictEqual(_getInternalState().collectingDependencies, true);
+			});
 		});
 
 		it("pops collectingDependencies state after throw (false)", () => {
@@ -847,12 +889,15 @@ describe("@dynein/state", () => {
 		});
 
 		it("pops collectingDependencies state after throw (true)", () => {
-			try {
-				untrack(() => {
-					throw new Error("err");
-				});
-			} catch (err) {}
-			assert.strictEqual(_getInternalState().collectingDependencies, true);
+			assert.strictEqual(_getInternalState().collectingDependencies, false);
+			createEffect(()=>{
+				try {
+					untrack(() => {
+						throw new Error("err");
+					});
+				} catch (err) {}
+				assert.strictEqual(_getInternalState().collectingDependencies, true);
+			});
 		});
 
 		it("pops assertedStatic state (true)", () => {
@@ -1067,8 +1112,93 @@ describe("@dynein/state", () => {
 		});
 	});
 
-	describe("onCleanup", ()=>{
+	describe("onBatchEnd", ()=>{
+		it("runs immediately outside of a batch", ()=>{
+			let ran = false
+			onBatchEnd(()=>{
+				ran = true
+			})
+			assert.strictEqual(ran, true)
+		})
 
+		it("runs at the end of a batch", ()=>{
+			let order = ""
+			batch(()=>{
+				order += "a "
+				onBatchEnd(()=>{
+					order += "end"
+				})
+				order += "b "
+			})
+			assert.strictEqual(order, "a b end")
+		})
+
+		it("runs at the end of all batches", ()=>{
+			let order = ""
+			batch(()=>{
+				order += "a "
+
+				batch(()=>{
+					order += "b "
+					batch(()=>{
+						order += "c "
+						onBatchEnd(()=>{
+							order += "end"
+						})
+						order += "d "
+					})
+					order += "e "
+				})
+				order += "f "
+			})
+			assert.strictEqual(order, "a b c d e f end")
+		})
+
+		it("runs in order with effects in a batch", ()=>{
+			let a = createSignal(0)
+
+			let order = ""
+			createEffect(()=>{
+				order += "A{"
+				a()
+				order += "}A "
+			})
+
+
+			order += "B{"
+			batch(()=>{
+				order+= "#1 "
+				onBatchEnd(()=>{
+					order += "end "
+				})
+				order+= "#2 "
+				a(1)
+				order+= "#3 "
+			})
+			order += "}B"
+			assert.strictEqual(order, "A{}A B{#1 #2 #3 end A{}A }B")
+		})
+
+		it("does not pass errors (1)", ()=>{
+			assert.doesNotThrow(()=>{
+				onBatchEnd(()=>{
+					throw new Error("test")
+				})
+			})
+		})
+
+		it("does not pass errors (2)", ()=>{
+			assert.doesNotThrow(()=>{
+				batch(()=>{
+					onBatchEnd(()=>{
+						throw new Error("test")
+					})
+				})
+			})
+		})
+	})
+
+	describe("onCleanup", ()=>{
 		it("can trigger an effect update without causing an infinite loop", ()=>{
 			const sig = createSignal(0)
 			const owner = new Owner()
@@ -1121,6 +1251,129 @@ describe("@dynein/state", () => {
 			assert.strictEqual(log, "");
 			assert.doesNotThrow(()=>sig(1))
 			assert.strictEqual(log, "ab");
+		})
+	})
+
+	describe("runWithOwner", ()=>{
+		it("sets owner", ()=>{
+			const owner1 = new Owner()
+			const owner2 = new Owner()
+
+			let innerOwner
+			runWithOwner(owner1, ()=>{
+				runWithOwner(owner2, ()=>{
+					innerOwner = getOwner()
+				})
+			})
+
+			assert.strictEqual(innerOwner, owner2)
+		})
+
+		it("isolates owner", ()=>{
+			const owner1 = new Owner()
+			const owner2 = new Owner()
+
+			let innerOwner1
+			let innerOwner2
+			runWithOwner(owner1, ()=>{
+				runWithOwner(owner2, ()=>{
+					innerOwner2 = getOwner()
+				})
+				innerOwner1 = getOwner()
+			})
+
+			assert.strictEqual(innerOwner2, owner2)
+			assert.strictEqual(innerOwner1, owner1)
+		})
+
+		it("passes errors", ()=>{
+			const owner1 = new Owner()
+			assert.throws(()=>{
+				runWithOwner(owner1, ()=>{
+					throw new Error("test")
+				})
+			})
+		})
+
+		it("allows setting owner === null", ()=>{
+			let innerOwner
+			const owner1 = new Owner()
+			runWithOwner(owner1, ()=>{
+				runWithOwner(null, ()=>{
+					innerOwner = getOwner()
+				})
+			})
+
+			assert.strictEqual(innerOwner, null)
+		})
+
+		it("allows setting owner === undefined", ()=>{
+			let innerOwner
+			const owner1 = new Owner()
+			runWithOwner(owner1, ()=>{
+				runWithOwner(undefined, ()=>{
+					innerOwner = getOwner()
+				})
+			})
+
+			assert.strictEqual(innerOwner, undefined)
+		})
+
+		it("passes dependency collection when saved in a tracking context", ()=>{
+			let runs = 0
+			let sig1 = createSignal(0)
+			let sig2 = createSignal(0)
+
+			let savedOwner
+			createEffect(()=>{
+				sig1()
+				runs++
+				savedOwner = getOwner()
+			})
+
+			createEffect(()=>{
+				untrack(()=>{
+					runWithOwner(savedOwner, ()=>{
+						sig2()
+						assert.strictEqual(_getInternalState().assertedStatic, false)
+						assert.strictEqual(_getInternalState().collectingDependencies, true)
+					})
+				})
+			})
+
+
+			assert.strictEqual(runs, 1)
+			sig2(1)
+			assert.strictEqual(runs, 2)
+			sig1(1)
+			assert.strictEqual(runs, 3)
+		})
+
+		it("does not cause dependency collection when saved in a non-tracking context", ()=>{
+			let runs = 0
+			let sig1 = createSignal(0)
+			let sig2 = createSignal(0)
+
+			let savedOwner
+			createEffect(()=>{
+				sig1()
+				runs++
+				assertStatic(()=>{
+					savedOwner = getOwner()
+				})
+			})
+
+			runWithOwner(savedOwner, ()=>{
+				sig2()
+				assert.strictEqual(_getInternalState().assertedStatic, true)
+				assert.strictEqual(_getInternalState().collectingDependencies, false)
+			})
+
+			assert.strictEqual(runs, 1)
+			sig2(1)
+			assert.strictEqual(runs, 1)
+			sig1(1)
+			assert.strictEqual(runs, 2)
 		})
 	})
 });
