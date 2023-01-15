@@ -155,18 +155,20 @@ function createAndInsertElement<
 				if (typeof val !== "function") {
 					throw new Error("Listeners must be functions.");
 				}
-				const owner = new Owner();
-				el.addEventListener(attributeName.substring(2).toLowerCase(), function () {
-					owner.reset();
-					runWithOwner(owner, () => {
-						batch(()=>{
-							untrack(()=>{
-								//@ts-ignore
-								val.apply(this, arguments);
+				untrack(()=>{
+					const owner = new Owner();
+					el.addEventListener(attributeName.substring(2).toLowerCase(), function () {
+						owner.reset();
+						runWithOwner(owner, () => {
+							batch(()=>{
+								untrack(()=>{
+									//@ts-ignore
+									val.apply(this, arguments);
+								})
 							})
-						})
+						});
 					});
-				});
+				})
 			} else if (typeof val === "function") {
 				if (isSignal(val)) {
 					const updateEventName: string | undefined = updateEventTable[attributeName];
@@ -224,7 +226,7 @@ function createAndInsertElement<
 	return el;
 }
 
-type MakeBoundCreateFunc<TagNameMap, TagName extends string & keyof TagNameMap> =
+type MakeBoundCreateFunc<TagNameMap extends Record<string, any>, TagName extends string & keyof TagNameMap> =
 	((attrs: AttrsAndEventsMap<TagNameMap, TagName>) => TagNameMap[TagName]) &
 	((attrs: AttrsAndEventsMap<TagNameMap, TagName>, inner: Inner<TagNameMap[TagName]>) => TagNameMap[TagName]) &
 	((inner: Inner<TagNameMap[TagName]>) => TagNameMap[TagName]) &
@@ -326,8 +328,11 @@ export function mountBody(inner: () => void) {
 	if (document.body) {
 		addPortal(document.body, null, inner);
 	} else {
+		const savedOwner = getOwner()
 		window.addEventListener("load", () => {
-			addPortal(document.body, null, inner);
+			runWithOwner(savedOwner, ()=>{
+				addPortal(document.body, null, inner);
+			})
 		});
 	}
 }
