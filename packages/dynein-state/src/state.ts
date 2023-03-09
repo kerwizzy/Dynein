@@ -132,10 +132,12 @@ export class Owner implements Destructable {
 
 	addChild(thing: Destructable) {
 		if (DEBUG) {
-			//console.log(`Owner@${this.debugID}: add child`, thing);
+			console.log(`Owner@${this.debugID}: add child`, thing);
 		}
 		if (this.destroyed) {
-			console.log(this.createContext, this.destroyContext)
+			if (DEBUG) {
+				console.log(this.createContext, this.destroyContext)
+			}
 			throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
 		}
 		thing.parent = this;
