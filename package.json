@@ -1,7 +1,7 @@
 {
   "name": "dynein-monorepo",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "./packages/dynein-watched-builtins",
     "./packages/dynein-dom",
     "./packages/dynein-hyperfor",
-	"./packages/dynein-shared-signals",
+    "./packages/dynein-shared-signals",
     "./packages/dynein"
   ],
   "devDependencies": {
