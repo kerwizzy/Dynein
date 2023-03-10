@@ -34,4 +34,4 @@ D.mountBody(()=>{
 
 ```
 
-For more information, see the [API docs](docs/API.md).
+For more information, see the [API docs](https://github.com/kerwizzy/Dynein/blob/master/docs/API.md).
