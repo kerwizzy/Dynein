@@ -161,6 +161,9 @@ class Hyperfor<T> {
 	}
 
 	private patch() {
+		if (this.owner.isDestroyed) {
+			return
+		}
 		this.patchScheduled = false
 		const rendered: ItemPatchState<T>[] = []
 		let itemIterator = this.startItem

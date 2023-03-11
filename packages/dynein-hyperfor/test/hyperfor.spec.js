@@ -235,4 +235,29 @@ describe("hyperfor", ()=>{
 		await sleep()
 		assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0 b1 ")
 	})
+
+	it("handles being in a D.addDynamic", async ()=>{
+		const show = D.createSignal(true)
+		const arr = new WatchedArray(["a", "b"])
+
+		mount(()=>{
+			D.addDynamic(()=>{
+				if (show()) {
+					hyperfor(arr, (item, index) => {
+						D.addText(()=>item+index()+" ")
+					})
+				} else {
+					D.addText("nothing")
+				}
+			})
+		})
+		await sleep()
+
+		D.batch(()=>{
+			arr.push("c")
+			show(false)
+		})
+		await sleep()
+		assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "nothing")
+	})
 })
