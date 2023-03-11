@@ -99,7 +99,7 @@ let debugIDCounter = 0;
 export class Owner implements Destructable {
 	debugID: string;
 	protected children: Set<Destructable> = new Set();
-	protected destroyed: boolean = false;
+	readonly isDestroyed: boolean = false;
 	parent: Owner | null = null;
 
 	readonly assertedStatic: boolean
@@ -134,7 +134,7 @@ export class Owner implements Destructable {
 		if (DEBUG) {
 			console.log(`Owner@${this.debugID}: add child`, thing);
 		}
-		if (this.destroyed) {
+		if (this.isDestroyed) {
 			if (DEBUG) {
 				console.log(this.createContext, this.destroyContext)
 			}
@@ -149,7 +149,8 @@ export class Owner implements Destructable {
 		if (DEBUG) {
 			console.log(`Owner@${this.debugID}: destroy`);
 		}
-		this.destroyed = true;
+		//@ts-ignore
+		this.isDestroyed = true;
 		if (this.parent) {
 			this.parent.children.delete(this);
 			this.parent = null;
@@ -395,7 +396,7 @@ class Effect extends Owner {
 	}
 
 	exec() {
-		if (this.destroyed) {
+		if (this.isDestroyed) {
 			return;
 		}
 

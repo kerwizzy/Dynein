@@ -146,12 +146,14 @@ Dynein keeps track of all this by using the `Owner` class. For all the technical
 
 ```ts
 interface Destructable {
-	destroy(): void;
-	parent: Owner | null;
+	destroy(): void
+	parent: Owner | null
 }
 
 class Owner implements Destructable {
-	parent: Owner | null = null;
+	parent: Owner | null = null
+
+	readonly isDestroyed: boolean
 
 	constructor(parent: Owner | null | undefined = currentOwner)
 
