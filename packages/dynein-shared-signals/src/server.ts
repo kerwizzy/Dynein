@@ -468,4 +468,8 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 	protected unprotectFromGC(signal: SharedSignal<any>) {
 		// do nothing, since server doesn't handle GC at the moment
 	}
+
+	public getObjectSignal<T>(obj: any, init: T, updateOnEqual = false) {
+		return this._makeOrGetSignal("$" + stableJSONStringify(obj), init, updateOnEqual).signal;
+	}
 }
