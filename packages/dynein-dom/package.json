@@ -1,6 +1,6 @@
 {
   "name": "@dynein/dom",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "",
   "type": "module",
   "types": "src/dom.ts",
@@ -14,7 +14,7 @@
   "author": "kerwizzy",
   "license": "MIT",
   "dependencies": {
-    "@dynein/state": "^0.1.0"
+    "@dynein/state": "^0.3.1"
   },
   "homepage": "https://github.com/kerwizzy/Dynein/",
   "bugs": "https://github.com/kerwizzy/Dynein/issues",
