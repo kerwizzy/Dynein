@@ -9,6 +9,7 @@
   "license": "MIT",
   "scripts": {
     "watch": "tsc --watch",
+	"test": "mocha",
     "build": "rm -rf ./built && tsc",
     "prepare": "npm run build"
   },
