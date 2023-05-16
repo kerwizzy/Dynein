@@ -1,6 +1,6 @@
 {
   "name": "@dynein/watched-builtins",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "",
   "type": "module",
   "types": "src/index.ts",
@@ -14,7 +14,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@dynein/state": "^0.1.0"
+    "@dynein/state": "^0.3.1"
   },
   "homepage": "https://github.com/kerwizzy/Dynein/",
   "bugs": "https://github.com/kerwizzy/Dynein/issues",
