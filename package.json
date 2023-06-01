@@ -16,7 +16,7 @@
     "./packages/dynein-watched-builtins",
     "./packages/dynein-dom",
     "./packages/dynein-hyperfor",
-	"./packages/dynein-shared-signals",
+	  "./packages/dynein-shared-signals",
     "./packages/dynein"
   ],
   "devDependencies": {

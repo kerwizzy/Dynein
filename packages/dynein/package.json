@@ -1,6 +1,6 @@
 {
   "name": "dynein",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "",
   "type": "module",
   "main": "built/index.js",
@@ -14,8 +14,8 @@
   "author": "kerwizzy",
   "license": "MIT",
   "dependencies": {
-    "@dynein/dom": "^0.2.2",
-    "@dynein/state": "^0.3.1"
+    "@dynein/dom": "^0.4.0",
+    "@dynein/state": "^0.4.0"
   },
   "homepage": "https://github.com/kerwizzy/Dynein/",
   "bugs": "https://github.com/kerwizzy/Dynein/issues",

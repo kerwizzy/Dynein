@@ -85,6 +85,42 @@ export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
 	})
 }
 
+export type Context<T> = {
+	readonly id: symbol
+	readonly defaultValue: T
+}
+
+export function createContext<T>(): Context<T | undefined>
+export function createContext<T>(defaultValue: T): Context<T>
+export function createContext(defaultValue?: any): Context<any> {
+	return {id: Symbol(), defaultValue}
+}
+
+export function runWithContext<T, R>(context: Context<T>, value: T, inner: ()=>R): R {
+	const owner = new Owner()
+	//@ts-ignore
+	owner.context = context
+	//@ts-ignore
+	owner.contextValue = value
+
+	return runWithOwner(owner, inner)
+}
+
+export function useContext<T>(context: Context<T>): T {
+	let owner = currentOwner
+	while (owner) {
+		//@ts-ignore
+		if (owner.context === context) {
+			//@ts-ignore
+			return owner.contextValue
+		}
+		owner = owner.parent
+	}
+
+	return context.defaultValue
+}
+
+
 export interface Destructable {
 	destroy(): void;
 	parent: Owner | null;
@@ -107,6 +143,9 @@ export class Owner implements Destructable {
 
 	protected createContext: any
 	protected destroyContext: any
+
+	private readonly context?: Context<any>
+	private readonly contextValue?: any
 
 	constructor(parent: Owner | null | undefined = currentOwner) {
 		this.debugID = (debugIDCounter++).toString();

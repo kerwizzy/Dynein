@@ -121,6 +121,10 @@ export function setInsertionState(
 	}
 }
 
+export function getTarget(): Node | null {
+	return insertTarget
+}
+
 function stringify(val: Primitive): string {
 	return val?.toString() ?? "";
 }

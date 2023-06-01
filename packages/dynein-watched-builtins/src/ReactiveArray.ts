@@ -12,7 +12,7 @@ type ReactiveArrayItem<T> = {
 /**
  * Return min <= i <= max such that !pred(i - 1) && pred(i).
  */
-export function binarySearch(min: number, max: number, pred: (val: number)=>boolean) {
+function binarySearch(min: number, max: number, pred: (val: number)=>boolean) {
     let lo = min-1, hi = max;
     while (1 + lo < hi) {
         const mi = lo + ((hi - lo) >> 1);
@@ -255,7 +255,7 @@ export class MappableReactiveArray<T> {
 }
 
 
-export default class ReactiveArray<T> extends MappableReactiveArray<T> {
+export class ReactiveArray<T> extends MappableReactiveArray<T> {
 	splice(start: number, remove: number, ...insert: T[]): [added: ReactiveArrayItem<T>[], removed: ReactiveArrayItem<T>[]] {
 		const mappedInsert = insert.map((value, i) => ({value, index: createSignal(start+i)}))
 
@@ -283,6 +283,4 @@ export default class ReactiveArray<T> extends MappableReactiveArray<T> {
 	push(value: T): ReactiveArrayItem<T> {
 		return this.splice(this.rawArray.length, 0, value)[0][0]
 	}
-
-
 }

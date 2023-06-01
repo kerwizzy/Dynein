@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner } from "../built/state.js";
+import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
 
 
 
@@ -1374,6 +1374,99 @@ describe("@dynein/state", () => {
 			assert.strictEqual(runs, 1)
 			sig1(1)
 			assert.strictEqual(runs, 2)
+		})
+	})
+
+	describe("createContext", ()=>{
+		it("creates a context", ()=>{
+			const ctx = createContext(0)
+		})
+	})
+
+	describe("useContext", ()=>{
+		it("returns the default value if called outside an owner", ()=>{
+			const ctx = createContext(42)
+
+			runWithOwner(undefined, ()=>{
+				assert.strictEqual(useContext(ctx), 42)
+			})
+		})
+
+		it("returns the default value if called with a null owner", ()=>{
+			const ctx = createContext(42)
+
+			runWithOwner(null, ()=>{
+				assert.strictEqual(useContext(ctx), 42)
+			})
+		})
+
+		it("returns the default value if called with an owner", ()=>{
+			const ctx = createContext(42)
+
+			const owner = new Owner()
+			runWithOwner(owner, ()=>{
+				assert.strictEqual(useContext(ctx), 42)
+			})
+		})
+
+		it("returns undefined if no default value is set", ()=>{
+			const ctx = createContext()
+
+			const owner = new Owner()
+			runWithOwner(owner, ()=>{
+				assert.strictEqual(useContext(ctx), undefined)
+			})
+		})
+	})
+
+	describe("runWithContext", ()=>{
+		it("sets the context", ()=>{
+			const ctx = createContext()
+
+			runWithContext(ctx, 5, ()=>{
+				assert.strictEqual(useContext(ctx), 5)
+			})
+		})
+
+		it("handles nested context assignments", ()=>{
+			const ctx = createContext()
+
+			runWithContext(ctx, 5, ()=>{
+				assert.strictEqual(useContext(ctx), 5)
+				runWithContext(ctx, 10, ()=>{
+					assert.strictEqual(useContext(ctx), 10)
+				})
+				assert.strictEqual(useContext(ctx), 5)
+			})
+		})
+
+		it("handles multiple contexts", ()=>{
+			const a = createContext()
+			const b = createContext(2)
+
+			assert.strictEqual(useContext(a), undefined)
+			runWithContext(a, 5, ()=>{
+				assert.strictEqual(useContext(a), 5)
+				assert.strictEqual(useContext(b), 2)
+				runWithContext(b, 10, ()=>{
+					assert.strictEqual(useContext(a), 5)
+					assert.strictEqual(useContext(b), 10)
+				})
+				assert.strictEqual(useContext(a), 5)
+				assert.strictEqual(useContext(b), 2)
+			})
+		})
+
+		it("returns the inner return value", ()=>{
+			const ctx = createContext()
+
+			const result = runWithContext(ctx, 5, ()=>{
+				assert.strictEqual(useContext(ctx), 5)
+
+				return "a"
+			})
+
+			assert.strictEqual(result, "a")
 		})
 	})
 });

@@ -19,6 +19,10 @@
 		* [toSignal](#dtosignal)
 		* [onUpdate](#donupdate)
 		* [createMemo](#dcreatememo)
+	* [Contexts](#contexts)
+		* [createContext](#dcreatecontext)
+		* [runWithContext](#drunwithcontext)
+		* [useContext](#dusecontext)
 	* [Advanced functions](#advanced-state-functions)
 		* [batch](#dbatch)
 		* [onBatchEnd](#donbatchend)
@@ -42,6 +46,7 @@
 	* [Advanced functions](#advanced-dom-functions)
 		* [addAsyncReplaceable](#daddasyncreplaceable)
 		* [addPortal](#daddportal)
+		* [getTarget](#dgettarget)
 		* [defineCustomProperty](#ddefinecustomproperty-experimental)
 * [High-performance list rendering](#high-performance-list-rendering) (@dynein/hyperfor)
 
@@ -202,6 +207,49 @@ function onCleanup(fn: () => void): void
 Run `fn` when the current ownership scope is destroyed or reset. (e.g., when the parent effect re-executes).
 
 It's important to use this to clean up things like `setInterval` or `addEventListener` when you create them inside effects, because otherwise they'll never be destroyed and might even get added over and over again each time your effect re-executes.
+
+## Contexts
+
+Many other JS frameworks (React, SolidJS, etc.) provide a feature called "contexts" or "provide/inject". The use case for all these APIs is distributing values through many levels of a component tree without having to explicitly pass the values in properties or arguments.
+
+The Dynein API for this is fairly simple, and only involves three functions:
+
+* [`D.createContext()`](#dcreatecontext) sets up a new context key, optionally with a default value.
+* [`D.runWithContext(context, value, inner)`](#drunwithcontext) runs `inner` with the context key `context` set to `value`.
+	* This method is conceptually equivalent to what other libraries call the "Provider".
+* [`D.useContext(context)`](#dusecontext) returns the value which has been bound to the context key `context` by an enclosing `D.runWithContext`.
+
+**IMPORTANT NOTE:** context values are propagated through the ownership tree, not the call tree or the component tree. So, for instance, if you save or create an Owner inside a `runWithContext` and then later run something inside that owner, `useContext` will give results as if it was called inside the `runWithContext`.
+
+### `D.createContext`
+
+```ts
+type Context<T> = {
+	readonly id: symbol
+	readonly defaultValue: T
+}
+
+function createContext<T>(): Context<T | undefined>
+function createContext<T>(defaultValue: T): Context<T>
+```
+
+Create a new `Context` object, optionally with a default value.
+
+### `D.runWithContext`
+
+```ts
+function runWithContext<T, R>(context: Context<T>, value: T, inner: () => R): R
+```
+
+Creates a new [Owner](#downer) with context key `context` set to `value`, runs `inner` inside that owner, and returns the result.
+
+### `D.useContext`
+
+```ts
+function useContext<T>(context: Context<T>): T
+```
+
+Searches upwards through the ownership tree to find the closest enclosing [`D.runWithContext`](#drunwithcontext) call setting the value of this context key. If no `D.runWithContext` call is found which defines the value of this context here, returns the default value of the context, or undefined if none was set.
 
 ## State Utilities
 
@@ -722,6 +770,14 @@ function addPortal(parentNode: Node, beforeNode: Node | null, inner: () => void)
 ```
 
 Create a new element creation context at `parentNode`. Element creation calls inside `inner` will be added as children of `parentNode`.
+
+### `D.getTarget`
+
+```ts
+function getTarget(): Node | null
+```
+
+Return the node inside which we're currently rendering, or else null if not rendering. Basically, `getTarget` is to [`getOwner`](#dgetowner) as [`addPortal`](#daddportal) is to [`runWithOwner`](#drunwithowner).
 
 ### `D.defineCustomProperty` **(EXPERIMENTAL)**
 

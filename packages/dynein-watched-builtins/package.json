@@ -1,6 +1,6 @@
 {
   "name": "@dynein/watched-builtins",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "",
   "type": "module",
   "types": "src/index.ts",
@@ -9,12 +9,12 @@
   "license": "MIT",
   "scripts": {
     "watch": "tsc --watch",
-	"test": "mocha",
+    "test": "mocha",
     "build": "rm -rf ./built && tsc",
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@dynein/state": "^0.3.1"
+    "@dynein/state": "^0.4.0"
   },
   "homepage": "https://github.com/kerwizzy/Dynein/",
   "bugs": "https://github.com/kerwizzy/Dynein/issues",
