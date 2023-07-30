@@ -1,4 +1,3 @@
-const DEBUG = false;
 const isSignalSymbol = Symbol("isSignal");
 
 // Internal state variables
@@ -9,6 +8,9 @@ let currentOwner:
 	| Owner
 	| null /* root on purpose */
 	| undefined /* root probably not on purpose, so create a warning */ = undefined;
+
+// Values overlayed on top of currentOwner.contextValues
+let contextValues: Map<Context<any>, any> | null = null
 
 function updateState<T>(
 	new_assertedStatic: boolean,
@@ -52,10 +54,13 @@ export function assertStatic<T>(inner: () => T): T {
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
 	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, inner);
 }
+
+// Returns a "restore point" that can be used with runWithOwner to restore the current effect,
+// collectingDependencies, assertedStatic, and contextValues state
 export function getOwner(): Owner | null | undefined {
 	if (!currentOwner) {
 		return currentOwner;
-	} else if (currentOwner.collectingDependencies === collectingDependencies && currentOwner.assertedStatic === assertedStatic) {
+	} else if (currentOwner.collectingDependencies === collectingDependencies && currentOwner.assertedStatic === assertedStatic && contextValues === null) {
 		return currentOwner
 	} else {
 		/* TODO: Maybe change this because it might cause unexpected behavior for .destroy()?
@@ -86,40 +91,64 @@ export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
 }
 
 export type Context<T> = {
-	readonly id: symbol
 	readonly defaultValue: T
 }
 
 export function createContext<T>(): Context<T | undefined>
 export function createContext<T>(defaultValue: T): Context<T>
 export function createContext(defaultValue?: any): Context<any> {
-	return {id: Symbol(), defaultValue}
+	return {defaultValue}
 }
 
 export function runWithContext<T, R>(context: Context<T>, value: T, inner: ()=>R): R {
-	const owner = new Owner()
-	//@ts-ignore
-	owner.context = context
-	//@ts-ignore
-	owner.contextValue = value
+	const old_contextValues = contextValues
+	if (!contextValues) {
+		contextValues = new Map()
+	}
+	const old_hasValue = old_contextValues && contextValues.has(context)
+	const old_value = old_hasValue && contextValues.get(context)
 
-	return runWithOwner(owner, inner)
+	contextValues.set(context, value)
+	try {
+		return inner()
+	} finally {
+		if (!old_contextValues) {
+			contextValues = null
+		} else if (!old_hasValue) {
+			contextValues.delete(context)
+		} else {
+			contextValues.set(context, old_value)
+		}
+	}
+}
+
+export function saveContexts(contexts: Context<any>[]): <T>(inner: ()=>T) => T {
+	let restoreContexts = <T>(inner: ()=>T)=>inner()
+
+	for (const ctx of contexts) {
+		const innerRestoreContexts = restoreContexts
+		const val = useContext(ctx)
+		restoreContexts = (inner)=>runWithContext(ctx, val, ()=>innerRestoreContexts(inner))
+	}
+
+	return restoreContexts
 }
 
 export function useContext<T>(context: Context<T>): T {
+	if (contextValues?.has(context)) {
+		return contextValues!.get(context)
+	}
+
 	let owner = currentOwner
 	while (owner) {
-		//@ts-ignore
-		if (owner.context === context) {
-			//@ts-ignore
-			return owner.contextValue
+		if (owner.contextValues?.has(context)) {
+			return owner.contextValues!.get(context)
 		}
 		owner = owner.parent
 	}
 
 	return context.defaultValue
 }
-
 
 export interface Destructable {
 	destroy(): void;
@@ -130,34 +159,31 @@ export interface Destructable {
 // are added to this object so that the owners will never be garbage collected.
 const rootOwners = new Set<any>()
 
-let debugIDCounter = 0;
+///*DEBUG*/let debugIDCounter = 0;
 // A simple tree for destroying all descendant contexts when an ancestor is destroyed
 export class Owner implements Destructable {
-	debugID: string;
+	///*DEBUG*/debugID: string;
 	protected children: Set<Destructable> = new Set();
 	readonly isDestroyed: boolean = false;
 	parent: Owner | null = null;
 
 	readonly assertedStatic: boolean
 	readonly collectingDependencies: boolean
+	readonly contextValues: ReadonlyMap<Context<any>, any> | null
 
-	protected createContext: any
-	protected destroyContext: any
-
-	private readonly context?: Context<any>
-	private readonly contextValue?: any
+	///*DEBUG*/protected createContext: any
+	///*DEBUG*/protected destroyContext: any
 
 	constructor(parent: Owner | null | undefined = currentOwner) {
-		this.debugID = (debugIDCounter++).toString();
+		///*DEBUG*/this.debugID = (debugIDCounter++).toString();
 
-		this.createContext = new Error(`Create Owner@${this.debugID}`)
+		///*DEBUG*/this.createContext = new Error(`Create Owner@${this.debugID}`)
 
 		this.assertedStatic = assertedStatic
 		this.collectingDependencies = collectingDependencies
+		this.contextValues = contextValues && new Map(contextValues)
 
-		if (DEBUG) {
-			console.trace(`Owner@${this.debugID}: create`);
-		}
+		///*DEBUG*/console.trace(`Owner@${this.debugID}: create`);
 		if (parent === undefined) {
 			console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 		}
@@ -170,24 +196,20 @@ export class Owner implements Destructable {
 	}
 
 	addChild(thing: Destructable) {
-		if (DEBUG) {
-			console.log(`Owner@${this.debugID}: add child`, thing);
-		}
+		///*DEBUG*/console.log(`Owner@${this.debugID}: add child`, thing);
 		if (this.isDestroyed) {
-			if (DEBUG) {
-				console.log(this.createContext, this.destroyContext)
-			}
-			throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
+			///*DEBUG*/console.log(this.createContext, this.destroyContext)
+			///*DEBUG*/throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
+			throw new Error("Can't add to destroyed context.");
 		}
 		thing.parent = this;
 		this.children.add(thing);
 	}
 
 	destroy() {
-		this.destroyContext = new Error(`Destroy Owner@${this.debugID}`)
-		if (DEBUG) {
-			console.log(`Owner@${this.debugID}: destroy`);
-		}
+		///*DEBUG*/this.destroyContext = new Error(`Destroy Owner@${this.debugID}`)
+		///*DEBUG*/console.log(`Owner@${this.debugID}: destroy`);
+
 		//@ts-ignore
 		this.isDestroyed = true;
 		if (this.parent) {
@@ -198,9 +220,7 @@ export class Owner implements Destructable {
 	}
 
 	reset() {
-		if (DEBUG) {
-			console.log(`Owner@${this.debugID}: reset`);
-		}
+		///*DEBUG*/console.log(`Owner@${this.debugID}: reset`);
 		const children = this.children
 
 		// if one of the child destructors triggers `reset` again, we don't
@@ -214,7 +234,7 @@ export class Owner implements Destructable {
 	}
 }
 
-export type Signal<T> = (()=> T) & (<U extends T>(newVal: U) => U) & {[isSignalSymbol]: true}
+export type Signal<T> = (() => T) & (<U extends T>(newVal: U) => U) & {[isSignalSymbol]: true}
 
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
@@ -246,10 +266,9 @@ export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal
 	// the above makes GC of `handler` depend on GC of `signal`
 
 	// This makes GC of `signal` depends on GC of `handler`, so now
-	// GC of signal and handler are linked. (This is important for @dynein/shared-state)
+	// GC of signal and handler are linked. (This is important for @dynein/shared-signals)
 	handler.dependents.add(signal);
 
-	//@ts-ignore
 	return signal;
 }
 
@@ -258,11 +277,7 @@ export function isSignal(thing: any): thing is Signal<any> {
 }
 
 export function createEffect(fn: () => void): Destructable {
-	const effect = new Effect(fn);
-	currentUpdateQueue.delayStart(() => {
-		effect.exec();
-	});
-	return effect;
+	return new Effect(fn);
 }
 
 export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Destructable {
@@ -418,20 +433,17 @@ let currentUpdateQueue = new UpdateQueue();
 // dependencies update.
 class Effect extends Owner {
 	private readonly fn: () => void;
-	private readonly sources: Set<DependencyHandler<any>>;
+	readonly sources: Set<DependencyHandler<any>>;
 	private readonly boundExec: () => void;
 	private executing: boolean = false;
-	private pendingDestroy: boolean = false;
+	private destroyPending: boolean = false;
 
 	constructor(fn: () => void) {
 		super();
 		this.fn = fn.bind(undefined);
 		this.sources = new Set();
 		this.boundExec = this.exec.bind(this);
-	}
-
-	addSource(src: DependencyHandler<any>) {
-		this.sources.add(src);
+		currentUpdateQueue.delayStart(this.boundExec);
 	}
 
 	exec() {
@@ -440,7 +452,7 @@ class Effect extends Owner {
 		}
 
 		for (const src of this.sources) {
-			src.removeDrain(this);
+			src.drains.delete(this);
 		}
 		this.sources.clear();
 		try {
@@ -448,7 +460,7 @@ class Effect extends Owner {
 			updateState(false, true, this, this.fn);
 		} finally {
 			this.executing = false;
-			if (this.pendingDestroy) {
+			if (this.destroyPending) {
 				this.destroy();
 			}
 		}
@@ -456,7 +468,7 @@ class Effect extends Owner {
 
 	destroy() {
 		if (this.executing) {
-			this.pendingDestroy = true;
+			this.destroyPending = true;
 		} else {
 			super.destroy();
 		}
@@ -466,7 +478,6 @@ class Effect extends Owner {
 		this.reset(); // Destroy subwatchers
 		currentUpdateQueue.schedule(this.boundExec);
 	}
-
 }
 
 function findParentEffect(c: Owner | null | undefined): Effect | null | undefined {
@@ -487,8 +498,8 @@ class DependencyHandler<T> {
 	read(): T {
 		const currentComputation = findParentEffect(currentOwner);
 		if (collectingDependencies && currentComputation) {
-			currentComputation.addSource(this);
-			this.addDrain(currentComputation);
+			currentComputation.sources.add(this);
+			this.drains.add(currentComputation);
 		} else if (assertedStatic) {
 			console.error("Looks like you might have wanted to add a dependency but didn't.");
 		}
@@ -501,18 +512,10 @@ class DependencyHandler<T> {
 			this.value = val;
 
 			if (updateOnEqual || changedValue) {
-				for (let drain of this.drains) {
+				for (const drain of this.drains) {
 					drain.schedule();
 				}
 			}
 		});
-	}
-
-	addDrain(comp: Effect) {
-		this.drains.add(comp);
-	}
-
-	removeDrain(comp: Effect) {
-		this.drains.delete(comp);
 	}
 }

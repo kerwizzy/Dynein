@@ -12,18 +12,15 @@ export type EventsMap<TagMap extends Record<string, any>, ElName extends string>
 export type AttrsAndEventsMap<TagMap extends Record<string, any>, ElName extends string> = Record<
 	string,
 	Primitive | ((...args: any[]) => any)
-> &
-	Partial<EventsMap<TagMap, ElName>> | {style?: any, class?: any};
+> & (Partial<EventsMap<TagMap, ElName>> & {style?: any, class?: any})
 
 const updateEventTable: Record<string, string> = {
-	//map of attribute:onchangeEventName
-	innerHTML: "input", //for contentEditable:true
 	value: "input",
 	checked: "input",
 	selectedIndex: "input" //<select>
 };
 
-function replacementVRange(start: Node, end: Node, setupReplacements: (replaceInner: (inner: () => void) => void) => void) {
+function replacementArea(start: Node, end: Node, setupReplacements: (replaceInner: (inner: () => void) => void) => void) {
 	let isFirst = true;
 
 	let destroyed = false;
@@ -74,7 +71,7 @@ function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
 			}
 		}
 	} else {
-		if (el.namespaceURI === "http://www.w3.org/2000/svg" || name.startsWith("data-")) {
+		if (el.namespaceURI === "http://www.w3.org/2000/svg" || name.startsWith("data-") || name.startsWith("aria-")) {
 			el.setAttribute(name, val)
 		} else {
 			if (name === "class") {
@@ -129,8 +126,9 @@ function stringify(val: Primitive): string {
 	return val?.toString() ?? "";
 }
 
-// TODO: is (void | undefined) what we want here? It seems to help force you to not have return values, since that will almost always be a mistake, but it doesn't force you to have return undefined.
+// (void | undefined) forces you to not have return values, since that will almost always be a mistake.
 type Inner<T> = ((parent: T) => (void | undefined)) | Primitive;
+
 function createAndInsertElement<
 	Namespace extends ElementNamespace,
 	TagName extends string & keyof ElementTagNameMapForNamespace[Namespace]
@@ -165,10 +163,8 @@ function createAndInsertElement<
 						owner.reset();
 						runWithOwner(owner, () => {
 							batch(()=>{
-								untrack(()=>{
-									//@ts-ignore
-									val.apply(this, arguments);
-								})
+								//@ts-ignore
+								val.apply(this, arguments);
 							})
 						});
 					});
@@ -347,7 +343,7 @@ export function addAsyncReplaceable(
 		dependent: (inner: () => void) => void
 	) => void
 ) {
-	replacementVRange(
+	replacementArea(
 		addNode(document.createComment("<async>")),
 		addNode(document.createComment("</async>")),
 		($r) => {
@@ -368,7 +364,7 @@ export function addAsyncReplaceable(
 }
 
 export function addDynamic(inner: () => void): void {
-	replacementVRange(
+	replacementArea(
 		addNode(document.createComment("<dynamic>")),
 		addNode(document.createComment("</dynamic>")),
 		($r) => {

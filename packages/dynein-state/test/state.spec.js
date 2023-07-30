@@ -1,6 +1,4 @@
-import { createSignal, toSignal, createEffect, createMemo, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
-
-
+import { createSignal, toSignal, createEffect, createMemo, onUpdate, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
 
 function serializer(target, load, store) {
 	const silencedData = silenceEcho(target)
@@ -347,13 +345,13 @@ describe("@dynein/state", () => {
 
 		it("restores current computation after throw", () => {
 			createRoot(() => {
-				const before = _getInternalState().currentOwnerOwner;
+				const before = _getInternalState().currentOwner;
 				try {
 					createEffect(() => {
 						throw new Error("err");
 					});
 				} catch (err) {}
-				assert.strictEqual(_getInternalState().currentOwnerOwner, before);
+				assert.strictEqual(_getInternalState().currentOwner, before);
 			});
 		});
 
@@ -549,6 +547,38 @@ describe("@dynein/state", () => {
 			p1(1);
 			assert.strictEqual(order, "B{}B A{}A D{}D C{}C D{}D ", "after set");
 		});
+
+		it("executes nested effects in order", ()=>{
+			const signal = createSignal(0);
+			let order = "";
+			createRoot(()=>{
+				createEffect(()=>{
+					onCleanup(()=>{
+						order += "!A1 "
+					})
+
+					order += "A{"+signal()+" "
+					createEffect(()=>{
+						order += "B{"+signal()+" "
+						order += "}B "
+
+						onCleanup(()=>{
+							order += "!B "
+						})
+					})
+					order += "}A "
+					onCleanup(()=>{
+						order += "!A2 "
+					})
+				})
+			})
+
+			assert.strictEqual(order, "A{0 B{0 }B }A ", "init");
+			order = "";
+			signal(1)
+			assert.strictEqual(order, "!A1 !B !A2 A{1 B{1 }B }A ", "after set");
+		})
+
 
 		it("delays execution when in watch init", () => {
 			const signal = createSignal(0);
@@ -782,7 +812,7 @@ describe("@dynein/state", () => {
 			})
 		})
 
-		it("Doesn't execute a destroy-pending watcher", () => {
+		it("doesn't execute a destroy-pending watcher", () => {
 			const a = createSignal(false);
 			const b = createSignal(false);
 
@@ -807,7 +837,102 @@ describe("@dynein/state", () => {
 			});
 			assert.strictEqual(order, "set b set a outer ");
 		});
+
+		it("doesn't execute a watcher forcibly destroyed during a run", () => {
+			const signal = createSignal(0)
+			let order = "";
+
+			let secondEffect
+			createRoot(() => {
+				createEffect(() => {
+					order += "A{"+signal()+" "
+					if (signal() === 1) {
+						secondEffect.destroy()
+					}
+					onCleanup(()=>{
+						order += "!A "
+					})
+					order += "}A "
+				})
+
+				secondEffect = createEffect(()=>{
+					order += "B{"+signal()+" "
+					onCleanup(()=>{
+						order += "!B "
+					})
+					order += "}B "
+				})
+			})
+
+			assert.strictEqual(order, "A{0 }A B{0 }B ", "init")
+			order = "";
+			signal(1)
+			assert.strictEqual(order, "!A !B A{1 }A ", "after set")
+		})
 	});
+
+	describe("onUpdate", () => {
+		it("calls inner only after the first update after setup", () => {
+			const signal = createSignal(0);
+			let count = 0;
+			createRoot(() => {
+				onUpdate(signal, () => {
+					count++;
+				});
+			});
+			assert.strictEqual(count, 0);
+			signal(1);
+			assert.strictEqual(count, 1);
+		});
+
+		it("does reexecute on equal data update", () => {
+			const signal = createSignal(0, true);
+			let count = 0;
+			createRoot(() => {
+				onUpdate(signal, () => {
+					count++;
+				});
+			});
+			assert.strictEqual(count, 0);
+			signal(0);
+			assert.strictEqual(count, 1);
+			signal(0);
+			assert.strictEqual(count, 2);
+		});
+
+		it("does not track inner deps", () => {
+			const signal = createSignal(0);
+			const b = createSignal(0);
+			let count = 0;
+			createRoot(() => {
+				onUpdate(signal, () => {
+					b()
+					count++;
+				});
+			});
+			assert.strictEqual(count, 0);
+			signal(1);
+			assert.strictEqual(count, 1);
+			b(1);
+			assert.strictEqual(count, 1);
+		});
+
+		it("calls inner with the latest value", () => {
+			const signal = createSignal(0);
+			let count = 0;
+			let calledWithVal = -1
+			createRoot(() => {
+				onUpdate(signal, (val) => {
+					count++
+					calledWithVal = val
+				});
+			});
+			assert.strictEqual(count, 0);
+			signal(12);
+			assert.strictEqual(count, 1);
+			assert.strictEqual(calledWithVal, 12);
+		});
+	})
 
 	describe("untrack", () => {
 		it("sets internalState.collectingDependencies", () => {
@@ -871,10 +996,12 @@ describe("@dynein/state", () => {
 
 		it("pops collectingDependencies state (true)", () => {
 			assert.strictEqual(_getInternalState().collectingDependencies, false);
-			createEffect(()=>{
-				untrack(() => {});
-				assert.strictEqual(_getInternalState().collectingDependencies, true);
-			});
+			createRoot(()=>{
+				createEffect(()=>{
+					untrack(() => {});
+					assert.strictEqual(_getInternalState().collectingDependencies, true);
+				});
+			})
 		});
 
 		it("pops collectingDependencies state after throw (false)", () => {
@@ -890,14 +1017,16 @@ describe("@dynein/state", () => {
 
 		it("pops collectingDependencies state after throw (true)", () => {
 			assert.strictEqual(_getInternalState().collectingDependencies, false);
-			createEffect(()=>{
-				try {
-					untrack(() => {
-						throw new Error("err");
-					});
-				} catch (err) {}
-				assert.strictEqual(_getInternalState().collectingDependencies, true);
-			});
+			createRoot(()=>{
+				createEffect(()=>{
+					try {
+						untrack(() => {
+							throw new Error("err");
+						});
+					} catch (err) {}
+					assert.strictEqual(_getInternalState().collectingDependencies, true);
+				});
+			})
 		});
 
 		it("pops assertedStatic state (true)", () => {
@@ -1158,10 +1287,12 @@ describe("@dynein/state", () => {
 			let a = createSignal(0)
 
 			let order = ""
-			createEffect(()=>{
-				order += "A{"
-				a()
-				order += "}A "
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					order += "}A "
+				})
 			})
 
 
@@ -1201,8 +1332,7 @@ describe("@dynein/state", () => {
 	describe("onCleanup", ()=>{
 		it("can trigger an effect update without causing an infinite loop", ()=>{
 			const sig = createSignal(0)
-			const owner = new Owner()
-			runWithOwner(owner, ()=>{
+			createRoot(()=>{
 				createEffect(() => {
 					const val = sig()
 					onCleanup(()=>{
@@ -1217,9 +1347,8 @@ describe("@dynein/state", () => {
 
 		it("isolates owner", ()=>{
 			const sig = createSignal(0)
-			const owner = new Owner()
 			let innerOwner = "a"
-			runWithOwner(owner, ()=>{
+			createRoot(()=>{
 				createEffect(() => {
 					const val = sig()
 					onCleanup(()=>{
@@ -1234,9 +1363,8 @@ describe("@dynein/state", () => {
 
 		it("isolates errors", () => {
 			const sig = createSignal(0)
-			const owner = new Owner()
 			let log = ""
-			runWithOwner(owner, ()=>{
+			createRoot(()=>{
 				createEffect(() => {
 					const val = sig()
 					onCleanup(()=>{
@@ -1256,8 +1384,8 @@ describe("@dynein/state", () => {
 
 	describe("runWithOwner", ()=>{
 		it("sets owner", ()=>{
-			const owner1 = new Owner()
-			const owner2 = new Owner()
+			const owner1 = new Owner(null)
+			const owner2 = new Owner(null)
 
 			let innerOwner
 			runWithOwner(owner1, ()=>{
@@ -1270,8 +1398,8 @@ describe("@dynein/state", () => {
 		})
 
 		it("isolates owner", ()=>{
-			const owner1 = new Owner()
-			const owner2 = new Owner()
+			const owner1 = new Owner(null)
+			const owner2 = new Owner(null)
 
 			let innerOwner1
 			let innerOwner2
@@ -1287,7 +1415,7 @@ describe("@dynein/state", () => {
 		})
 
 		it("passes errors", ()=>{
-			const owner1 = new Owner()
+			const owner1 = new Owner(null)
 			assert.throws(()=>{
 				runWithOwner(owner1, ()=>{
 					throw new Error("test")
@@ -1297,7 +1425,7 @@ describe("@dynein/state", () => {
 
 		it("allows setting owner === null", ()=>{
 			let innerOwner
-			const owner1 = new Owner()
+			const owner1 = new Owner(null)
 			runWithOwner(owner1, ()=>{
 				runWithOwner(null, ()=>{
 					innerOwner = getOwner()
@@ -1309,7 +1437,7 @@ describe("@dynein/state", () => {
 
 		it("allows setting owner === undefined", ()=>{
 			let innerOwner
-			const owner1 = new Owner()
+			const owner1 = new Owner(null)
 			runWithOwner(owner1, ()=>{
 				runWithOwner(undefined, ()=>{
 					innerOwner = getOwner()
@@ -1325,22 +1453,26 @@ describe("@dynein/state", () => {
 			let sig2 = createSignal(0)
 
 			let savedOwner
-			createEffect(()=>{
-				sig1()
-				runs++
-				savedOwner = getOwner()
-			})
 
-			createEffect(()=>{
-				untrack(()=>{
-					runWithOwner(savedOwner, ()=>{
-						sig2()
-						assert.strictEqual(_getInternalState().assertedStatic, false)
-						assert.strictEqual(_getInternalState().collectingDependencies, true)
-					})
+			createRoot(()=>{
+				createEffect(()=>{
+					sig1()
+					runs++
+					savedOwner = getOwner()
 				})
 			})
 
+			createRoot(()=>{
+				createEffect(()=>{
+					untrack(()=>{
+						runWithOwner(savedOwner, ()=>{
+							sig2()
+							assert.strictEqual(_getInternalState().assertedStatic, false)
+							assert.strictEqual(_getInternalState().collectingDependencies, true)
+						})
+					})
+				})
+			})
 
 			assert.strictEqual(runs, 1)
 			sig2(1)
@@ -1355,11 +1487,13 @@ describe("@dynein/state", () => {
 			let sig2 = createSignal(0)
 
 			let savedOwner
-			createEffect(()=>{
-				sig1()
-				runs++
-				assertStatic(()=>{
-					savedOwner = getOwner()
+			createRoot(()=>{
+				createEffect(()=>{
+					sig1()
+					runs++
+					assertStatic(()=>{
+						savedOwner = getOwner()
+					})
 				})
 			})
 
@@ -1403,7 +1537,7 @@ describe("@dynein/state", () => {
 		it("returns the default value if called with an owner", ()=>{
 			const ctx = createContext(42)
 
-			const owner = new Owner()
+			const owner = new Owner(null)
 			runWithOwner(owner, ()=>{
 				assert.strictEqual(useContext(ctx), 42)
 			})
@@ -1412,7 +1546,7 @@ describe("@dynein/state", () => {
 		it("returns undefined if no default value is set", ()=>{
 			const ctx = createContext()
 
-			const owner = new Owner()
+			const owner = new Owner(null)
 			runWithOwner(owner, ()=>{
 				assert.strictEqual(useContext(ctx), undefined)
 			})

@@ -518,26 +518,28 @@ describe("@dynein/dom", ()=>{
 			assert.strictEqual(count, 2)
 		})
 
-		it("updates in a single tick", ()=>{
+		it("updates in a single tick (1)", ()=>{
 			const signal = createSignal(1)
+
+			let err = false
 			const document = mount(()=>{
 				addIf(()=>signal(), ()=>{
 					addDynamic(()=>{
 						if (!signal()) {
-							throw new Error("Got falsy in truthy addIf branch")
+							err = true
 						}
 					})
 				})
 			})
 
-			assert.doesNotThrow(()=>{
-				signal(0)
-			})
+			signal(0)
+			assert.strictEqual(err, false)
 		})
 
 		it("updates in a single tick (2)", ()=>{
 			const url = createSignal("abc")
 
+			let err = false
 			const document = mount(()=>{
 				addIf(()=>false, ()=>{
 
@@ -546,17 +548,65 @@ describe("@dynein/dom", ()=>{
 				}).elseif(()=>/abc/.test(url()), ()=>{
 					addDynamic(()=>{
 						if (!/abc/.exec(url())) {
-							throw new Error("Got wrong state in branch")
+							err = true
 						}
 					})
 				})
 			})
 
-			assert.doesNotThrow(()=>{
-				batch(()=>{
-					url("xyz")
+			url("xyz")
+			assert.strictEqual(err, false)
+		})
+
+		// This obviously isn't the most preferable behavior, but there doesn't
+		// seem to be an easy way to fix it. The problem is that @dynein/state runs effects
+		// in order of last execution time, and the addIf() reruns when .else is called, after the
+		// addDynamic has already been added. This causes the addDynamic to rerun first after
+		// val(1) triggers an update of both.
+		//
+		// The reason we have these two tests here is just to record the behavior and make it easy
+		// to notice if it changes in the future.
+		it("doesn't update in a single tick (undefined behavior) (1)", ()=>{
+			const val = createSignal(0)
+
+			let err = false
+			const document = mount(()=>{
+				addIf(()=>val() === 0, ()=>{
+					addDynamic(()=>{
+						if (val() !== 0) {
+							err = true
+						}
+					})
+				}).else(()=>{
+
 				})
 			})
+
+			val(1)
+			assert.strictEqual(err, true)
+		})
+
+		it("doesn't update in a single tick (undefined behavior) (2)", ()=>{
+			const a = createSignal(0)
+			const val = createSignal(0)
+
+			let err = false
+			const document = mount(()=>{
+				addIf(()=>!a() && (val() === 0), ()=>{
+					addDynamic(()=>{
+						if (val() !== 0) {
+							err = true
+						}
+					})
+				})
+			})
+
+			// This causes the addIf to rerun, and although the condition is the same,
+			// the addIf will now be executed after the addDynamic when val(1) is called.
+			a(false)
+			assert.strictEqual(err, false)
+			val(1)
+			assert.strictEqual(err, true)
 		})
 	})
 
@@ -604,7 +654,7 @@ describe("@dynein/dom", ()=>{
 					if (signal()) {
 						addDynamic(()=>{
 							if (!signal()) {
-								throw new Error("Got falsy in truthy addIf branch")
+								throw new Error("Got falsy in truthy branch")
 							}
 						})
 					}
