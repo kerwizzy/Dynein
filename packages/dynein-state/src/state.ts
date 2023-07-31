@@ -16,21 +16,25 @@ function updateState<T>(
 	new_assertedStatic: boolean,
 	new_collectingDependencies: boolean,
 	new_currentOwner: Owner | null | undefined,
+	new_contextValues: Map<Context<any>, any> | null,
 	inner: () => T
 ) {
 	const old_assertedStatic = assertedStatic;
 	const old_collectingDependencies = collectingDependencies;
 	const old_currentOwner = currentOwner;
+	const old_contextValues = contextValues
 
 	assertedStatic = new_assertedStatic;
 	collectingDependencies = new_collectingDependencies;
 	currentOwner = new_currentOwner;
+	contextValues = new_contextValues
 	try {
 		return inner();
 	} finally {
 		assertedStatic = old_assertedStatic;
 		collectingDependencies = old_collectingDependencies;
 		currentOwner = old_currentOwner;
+		contextValues = old_contextValues
 	}
 }
 
@@ -39,27 +43,31 @@ export function _getInternalState() {
 }
 
 export function untrack<T>(inner: () => T): T {
-	return updateState(false, false, currentOwner, inner);
+	return updateState(false, false, currentOwner, contextValues, inner);
 }
 export function retrack<T>(inner: () => T): T {
-	return updateState(assertedStatic, true, currentOwner, inner);
+	return updateState(assertedStatic, true, currentOwner, contextValues, inner);
 }
 
 const sample = untrack;
 export { sample };
 
 export function assertStatic<T>(inner: () => T): T {
-	return updateState(true, false, currentOwner, inner);
+	return updateState(true, false, currentOwner, contextValues, inner);
 }
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
-	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, inner);
+	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, null, inner);
 }
 
 // Returns a "restore point" that can be used with runWithOwner to restore the current effect,
 // collectingDependencies, assertedStatic, and contextValues state
 export function getOwner(): Owner | null | undefined {
 	if (!currentOwner) {
-		return currentOwner;
+		if (!contextValues) {
+			return currentOwner;
+		} else {
+			return new Owner(null)
+		}
 	} else if (currentOwner.collectingDependencies === collectingDependencies && currentOwner.assertedStatic === assertedStatic && contextValues === null) {
 		return currentOwner
 	} else {
@@ -84,7 +92,7 @@ export function getOwner(): Owner | null | undefined {
 	}
 }
 export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
-	return updateState(false, false, currentOwner, ()=>{
+	return updateState(false, false, currentOwner, contextValues, ()=>{
 		const owner = new Owner(null)
 		return runWithOwner(owner, ()=>inner(()=>owner.destroy()))
 	})
@@ -451,13 +459,14 @@ class Effect extends Owner {
 			return;
 		}
 
+		this.reset() // Necessary to make the "effect created inside an exec-pending effect" test pass
 		for (const src of this.sources) {
 			src.drains.delete(this);
 		}
 		this.sources.clear();
 		try {
 			this.executing = true;
-			updateState(false, true, this, this.fn);
+			updateState(false, true, this, contextValues, this.fn);
 		} finally {
 			this.executing = false;
 			if (this.destroyPending) {

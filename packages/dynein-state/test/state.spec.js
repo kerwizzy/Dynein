@@ -812,7 +812,87 @@ describe("@dynein/state", () => {
 			})
 		})
 
-		it("doesn't execute a destroy-pending watcher", () => {
+		it("effect created inside an exec-pending effect", () => {
+			const a = createSignal(0);
+			const b = createSignal(0)
+
+			let idCounter = 0
+			let order = "";
+			createRoot(()=>{
+				createEffect(()=>{
+					const id = (idCounter++)
+					onCleanup(()=>{
+						order += `cleanup outer(${id}) `
+					})
+					order += `outer(${id}) { `
+					if (!a()) {
+						order += "set a { "
+						a(true)
+						order += "} set a "
+					}
+
+					order += `create inner(${id}) `
+					createEffect(()=>{
+						onCleanup(()=>{
+							order += `cleanup inner(${id}) `
+						})
+						b()
+						order += `run inner(${id}) `
+					})
+					order += `} outer(${id}) `
+				})
+			})
+			assert.strictEqual(order, "outer(0) { set a { cleanup outer(0) } set a create inner(0) run inner(0) } outer(0) cleanup inner(0) outer(1) { create inner(1) run inner(1) } outer(1) ");
+			order = ""
+			b(1)
+			assert.strictEqual(order, "cleanup inner(1) run inner(1) ");
+		})
+
+		// These two tests maybe aren't the most preferable behavior, but its an edge case and
+		// there doesn't seem to be an easy way to fix it. In real world-scenarios where you have
+		// a self-triggering effect like this (e.g., effect checks a precondition and then
+		// fixes it), you should probably return at the end of the `if (!a()) {` block and then
+		// the inner effect wouldn't be created twice.
+		//
+		// Maybe I'll revisit this in the future, but for now this case is undefined behavior,
+		// and tested here to document it and make it easy to notice if some future edit to Dynein
+		// changes it.
+		it("executes but doesn't create an effect created inside an exec-pending effect (subclock) (undefined behavior)", () => {
+			const a = createSignal(0);
+			const b = createSignal(0)
+
+			let idCounter = 0
+			let order = "";
+			createRoot(()=>{
+				createEffect(()=>{
+					const id = (idCounter++)
+					onCleanup(()=>{
+						order += `cleanup outer(${id}) `
+					})
+					order += `outer(${id}) { `
+					if (!a()) {
+						order += "set a { "
+						subclock(()=>{
+							a(true)
+						})
+						order += "} set a "
+					}
+
+					order += `create inner(${id}) `
+					createEffect(()=>{
+						b()
+						order += `run inner(${id}) `
+					})
+					order += `} outer(${id}) `
+				})
+			})
+			assert.strictEqual(order, "outer(0) { set a { cleanup outer(0) outer(1) { create inner(1) run inner(1) } outer(1) } set a create inner(0) run inner(0) } outer(0) ");
+			order = ""
+			b(1)
+			assert.strictEqual(order, "run inner(1) run inner(0) ");
+		})
+
+		it("doesn't reexecute a destroy-pending watcher", () => {
 			const a = createSignal(false);
 			const b = createSignal(false);
 
@@ -1551,6 +1631,106 @@ describe("@dynein/state", () => {
 				assert.strictEqual(useContext(ctx), undefined)
 			})
 		})
+
+		it("returns the value from a saved owner (1)", ()=>{
+			const ctx = createContext()
+
+			let owner
+			runWithOwner(new Owner(null), ()=>{
+				runWithContext(ctx, 5, ()=>{
+					owner = getOwner()
+				})
+			})
+			runWithOwner(owner, ()=>{
+				assert.strictEqual(useContext(ctx), 5)
+			})
+		})
+
+		it("returns the value from a saved owner (2)", ()=>{
+			const ctx = createContext()
+
+			let owner
+			runWithOwner(new Owner(null), ()=>{
+				runWithContext(ctx, 5, ()=>{
+					owner = getOwner()
+				})
+			})
+			runWithContext(ctx, 2, ()=>{
+				runWithOwner(owner, ()=>{
+					assert.strictEqual(useContext(ctx), 5)
+				})
+			})
+		})
+
+		it("handles nested restore from a saved owner", ()=>{
+			const ctx = createContext()
+
+			let owner
+			runWithOwner(new Owner(null), ()=>{
+				runWithContext(ctx, 5, ()=>{
+					owner = getOwner()
+				})
+			})
+
+			runWithContext(ctx, 2, ()=>{
+				assert.strictEqual(useContext(ctx), 2)
+				runWithOwner(owner, ()=>{
+					assert.strictEqual(useContext(ctx), 5)
+					runWithContext(ctx, 3, ()=>{
+						assert.strictEqual(useContext(ctx), 3)
+						runWithOwner(owner, ()=>{
+							assert.strictEqual(useContext(ctx), 5)
+						})
+						assert.strictEqual(useContext(ctx), 3)
+					})
+					assert.strictEqual(useContext(ctx), 5)
+				})
+				assert.strictEqual(useContext(ctx), 2)
+			})
+		})
+
+		it("returns the value from a saved root owner (1)", ()=>{
+			const ctx = createContext()
+
+			let owner
+			runWithContext(ctx, 5, ()=>{
+				owner = getOwner()
+			})
+			runWithOwner(owner, ()=>{
+				assert.strictEqual(useContext(ctx), 5)
+			})
+		})
+
+		it("returns the value from a saved root owner (2)", ()=>{
+			const ctx = createContext()
+
+			let owner
+			runWithContext(ctx, 5, ()=>{
+				owner = getOwner()
+			})
+			runWithContext(ctx, 2, ()=>{
+				runWithOwner(owner, ()=>{
+					assert.strictEqual(useContext(ctx), 5)
+				})
+			})
+		})
+
+
+		it("resets to an unset value in a saved owner", ()=>{
+			const a = createContext()
+			const b = createContext()
+
+			let owner
+			runWithContext(a, 5, ()=>{
+				owner = getOwner()
+			})
+			runWithContext(b, 2, ()=>{
+				runWithOwner(owner, ()=>{
+					assert.strictEqual(useContext(a), 5, "check a")
+					assert.strictEqual(useContext(b), undefined, "check b")
+				})
+			})
+		})
 	})
 
 	describe("runWithContext", ()=>{
@@ -1569,6 +1749,19 @@ describe("@dynein/state", () => {
 				assert.strictEqual(useContext(ctx), 5)
 				runWithContext(ctx, 10, ()=>{
 					assert.strictEqual(useContext(ctx), 10)
+				})
+				assert.strictEqual(useContext(ctx), 5)
+			})
+		})
+
+		it("handles errors", ()=>{
+			const ctx = createContext()
+
+			runWithContext(ctx, 5, ()=>{
+				assert.throws(()=>{
+					runWithContext(ctx, 10, ()=>{
+						throw new Error("Test")
+					})
 				})
 				assert.strictEqual(useContext(ctx), 5)
 			})
