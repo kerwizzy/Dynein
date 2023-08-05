@@ -9,14 +9,19 @@ let currentOwner:
 	| null /* root on purpose */
 	| undefined /* root probably not on purpose, so create a warning */ = undefined;
 
-// Values overlayed on top of currentOwner.contextValues
-let contextValues: Map<Context<any>, any> | null = null
+type ContextStore = {
+	parent: ContextStore | null
+	values: Map<Context<any>, any>,
+	frozen: boolean
+}
+
+let contextValues: ContextStore | null = null
 
 function updateState<T>(
 	new_assertedStatic: boolean,
 	new_collectingDependencies: boolean,
 	new_currentOwner: Owner | null | undefined,
-	new_contextValues: Map<Context<any>, any> | null,
+	new_contextValues: ContextStore | null,
 	inner: () => T
 ) {
 	const old_assertedStatic = assertedStatic;
@@ -56,7 +61,7 @@ export function assertStatic<T>(inner: () => T): T {
 	return updateState(true, false, currentOwner, contextValues, inner);
 }
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
-	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, null, inner);
+	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, owner?.contextValues ?? null, inner);
 }
 
 // Returns a "restore point" that can be used with runWithOwner to restore the current effect,
@@ -92,7 +97,9 @@ export function getOwner(): Owner | null | undefined {
 	}
 }
 export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
-	return updateState(false, false, currentOwner, contextValues, ()=>{
+	// The outer updateState is to set collectingDependencies, assertedStatic, and contextValues before
+	// creating owner.
+	return updateState(false, false, null, null, ()=>{
 		const owner = new Owner(null)
 		return runWithOwner(owner, ()=>inner(()=>owner.destroy()))
 	})
@@ -110,23 +117,31 @@ export function createContext(defaultValue?: any): Context<any> {
 
 export function runWithContext<T, R>(context: Context<T>, value: T, inner: ()=>R): R {
 	const old_contextValues = contextValues
-	if (!contextValues) {
-		contextValues = new Map()
+	if (!contextValues || contextValues.frozen) {
+		contextValues = {
+			parent: contextValues,
+			values: new Map(),
+			frozen: false
+		}
 	}
-	const old_hasValue = old_contextValues && contextValues.has(context)
-	const old_value = old_hasValue && contextValues.get(context)
+	const values = contextValues.values
 
-	contextValues.set(context, value)
+	const old_hasValue = values.has(context)
+	const old_value = values.get(context)
+
+	values.set(context, value)
 	try {
 		return inner()
 	} finally {
-		if (!old_contextValues) {
-			contextValues = null
-		} else if (!old_hasValue) {
-			contextValues.delete(context)
-		} else {
-			contextValues.set(context, old_value)
+		// It could have been frozen by something inside inner that cached the context.
+		if (!contextValues!.frozen) {
+			if (!old_hasValue) {
+				values.delete(context)
+			} else {
+				values.set(context, old_value)
+			}
 		}
+		contextValues = old_contextValues
 	}
 }
 
@@ -143,16 +158,12 @@ export function saveContexts(contexts: Context<any>[]): <T>(inner: ()=>T) => T {
 }
 
 export function useContext<T>(context: Context<T>): T {
-	if (contextValues?.has(context)) {
-		return contextValues!.get(context)
-	}
-
-	let owner = currentOwner
-	while (owner) {
-		if (owner.contextValues?.has(context)) {
-			return owner.contextValues!.get(context)
+	let ctx: ContextStore | null = contextValues
+	while (ctx) {
+		if (ctx.values?.has(context)) {
+			return ctx.values!.get(context)
 		}
-		owner = owner.parent
+		ctx = ctx.parent
 	}
 
 	return context.defaultValue
@@ -177,7 +188,7 @@ export class Owner implements Destructable {
 
 	readonly assertedStatic: boolean
 	readonly collectingDependencies: boolean
-	readonly contextValues: ReadonlyMap<Context<any>, any> | null
+	readonly contextValues: ContextStore | null
 
 	///*DEBUG*/protected createContext: any
 	///*DEBUG*/protected destroyContext: any
@@ -189,7 +200,10 @@ export class Owner implements Destructable {
 
 		this.assertedStatic = assertedStatic
 		this.collectingDependencies = collectingDependencies
-		this.contextValues = contextValues && new Map(contextValues)
+		this.contextValues = contextValues
+		if (contextValues) {
+			contextValues.frozen = true
+		}
 
 		///*DEBUG*/console.trace(`Owner@${this.debugID}: create`);
 		if (parent === undefined) {
@@ -284,7 +298,7 @@ export function isSignal(thing: any): thing is Signal<any> {
 	return thing && thing[isSignalSymbol] === true;
 }
 
-export function createEffect(fn: () => void): Destructable {
+export function createEffect(fn: () => (void | Promise<void>)): Destructable {
 	return new Effect(fn);
 }
 
@@ -440,21 +454,27 @@ let currentUpdateQueue = new UpdateQueue();
 // Internal class created by createEffect. Collects dependencies of `fn` and rexecutes `fn` when
 // dependencies update.
 class Effect extends Owner {
-	private readonly fn: () => void;
+	private readonly fn: () => (void | Promise<void>);
 	readonly sources: Set<DependencyHandler<any>>;
 	private readonly boundExec: () => void;
 	private executing: boolean = false;
 	private destroyPending: boolean = false;
+	private asyncExec: boolean = false
+	private schedulePending: boolean = false
 
-	constructor(fn: () => void) {
+	constructor(fn: () => (void | Promise<void>)) {
 		super();
+		//@ts-ignore
+		this.assertedStatic = false
+		//@ts-ignore
+		this.collectingDependencies = true
 		this.fn = fn.bind(undefined);
 		this.sources = new Set();
 		this.boundExec = this.exec.bind(this);
 		currentUpdateQueue.delayStart(this.boundExec);
 	}
 
-	exec() {
+	private exec() {
 		if (this.isDestroyed) {
 			return;
 		}
@@ -466,17 +486,33 @@ class Effect extends Owner {
 		this.sources.clear();
 		try {
 			this.executing = true;
-			updateState(false, true, this, contextValues, this.fn);
-		} finally {
-			this.executing = false;
-			if (this.destroyPending) {
-				this.destroy();
+			const maybePromise = updateState(false, true, this, this.contextValues, this.fn);
+			this.asyncExec = maybePromise instanceof Promise
+			if (this.asyncExec) {
+				(maybePromise as any).finally(()=>{
+					this.finishExec()
+				})
 			}
+		} finally {
+			if (!this.asyncExec) {
+				this.finishExec()
+			}
+		}
+	}
+
+	private finishExec() {
+		this.executing = false;
+		if (this.destroyPending) {
+			this.destroy();
+		} else if (this.schedulePending) {
+			this.schedulePending = false
+			currentUpdateQueue.schedule(this.boundExec);
 		}
 	}
 
 	destroy() {
 		if (this.executing) {
+			this.reset()
 			this.destroyPending = true;
 		} else {
 			super.destroy();
@@ -485,7 +521,11 @@ class Effect extends Owner {
 
 	schedule() {
 		this.reset(); // Destroy subwatchers
-		currentUpdateQueue.schedule(this.boundExec);
+		if (this.asyncExec && this.executing) {
+			this.schedulePending = true
+		} else {
+			currentUpdateQueue.schedule(this.boundExec);
+		}
 	}
 }
 
@@ -526,5 +566,85 @@ class DependencyHandler<T> {
 				}
 			}
 		});
+	}
+}
+
+type StateStasher = ()=>(()=>void)
+
+const stateStashers = new Set<StateStasher>()
+const stashAllState: StateStasher = ()=>{
+	const restorers: (()=>void)[] = []
+	for (const getRestorer of stateStashers) {
+		restorers.push(getRestorer())
+	}
+	return ()=>{
+		for (const restorer of restorers) {
+			restorer()
+		}
+	}
+}
+
+let basicRestoreBaseState = ()=>{}
+const restoreBaseState = ()=>{
+	basicRestoreBaseState()
+	currentUpdateQueue.start()
+}
+
+export function addStateStasher(stasher: StateStasher) {
+	stateStashers.add(stasher)
+	basicRestoreBaseState = stashAllState()
+}
+
+addStateStasher(()=>{
+	const old_assertedStatic = assertedStatic;
+	const old_collectingDependencies = collectingDependencies;
+	const old_currentOwner = currentOwner;
+	const old_contextValues = contextValues
+	if (contextValues) {
+		contextValues.frozen = true
+	}
+
+	const old_currentUpdateQueue = currentUpdateQueue
+	const old_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
+
+	return ()=>{
+		assertedStatic = old_assertedStatic
+		collectingDependencies = old_collectingDependencies
+		currentOwner = old_currentOwner
+		contextValues = old_contextValues
+		currentUpdateQueue = old_currentUpdateQueue
+		currentUpdateQueue.startDelayed = old_currentUpdateQueue_startDelayed
+	}
+})
+
+export function $s<T>(promise: Promise<T>): Promise<T> {
+	const restore = stashAllState()
+	promise.finally(()=>{
+		///*DEBUG*/console.log("$s restore saved state")
+		restore()
+
+		// TODO: Should maybe use process.nextTick in node, since process.nextTick runs before
+		// microtasks, and thus code in process.nextTick will have state leakage.
+		// See: https://stackoverflow.com/a/57325561
+
+		//@ts-ignore
+		queueMicrotask(()=>{
+			///*DEBUG*/console.log("restore base state")
+			restoreBaseState()
+		})
+	}).catch(()=>{})
+	return promise
+}
+
+export function stashState(): <T>(inner: ()=>T)=>T {
+	const restoreStashed = stashAllState()
+	return (inner)=>{
+		const restore = stashAllState()
+		try {
+			restoreStashed()
+			return inner()
+		} finally {
+			restore()
+		}
 	}
 }

@@ -1,4 +1,9 @@
-import { createSignal, toSignal, createEffect, createMemo, onUpdate, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
+import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
+
+process.on('unhandledRejection', (reason) => {
+	console.log("unhandled rejection", reason)
+	throw reason;
+});
 
 function serializer(target, load, store) {
 	const silencedData = silenceEcho(target)
@@ -42,6 +47,14 @@ function silenceEcho(signal) {
 			signal(val)
 		})
 		updateFromHere = false
+	})
+}
+
+function sleep(ms = 1) {
+	return new Promise((resolve) => {
+		setTimeout(()=>{
+			resolve()
+		}, ms)
 	})
 }
 
@@ -244,7 +257,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(innerCount, 2);
 		});
 
-		it("handles destruction of parent within child", ()=>{
+		it("handles signal-triggered destruction of parent within child (1)", ()=>{
 			let order = "";
 			const a = createSignal("")
 			createRoot(() => {
@@ -269,6 +282,81 @@ describe("@dynein/state", () => {
 				a("a")
 			})
 			assert.strictEqual(order, "inner{}inner outer{inner{}inner }outer ")
+		})
+
+		it("handles signal-triggered destruction of parent within child (2)", ()=>{
+			const signal = createSignal(0)
+			const owner = new Owner(null)
+
+			let order = ""
+			runWithOwner(owner, ()=>{
+				createEffect(()=>{
+					onCleanup(()=>{
+						order += "cleanup outer "
+					})
+					order += `run outer(${signal()}) `
+
+					if (signal() === 0) {
+						createEffect(()=>{
+							onCleanup(()=>{
+								order += "cleanup inner 1 "
+							})
+							order += "run inner 1 "
+
+							order += "outer destroy{"
+							signal(1)
+							order += "}outer destroy "
+						})
+
+						createEffect(()=>{
+							onCleanup(()=>{
+								order += "cleanup inner 2 "
+							})
+							order += "run inner 2 "
+						})
+						order += "outer done "
+					}
+				})
+			})
+
+			// Notice this is basically identical to the below test
+			assert.strictEqual(order, "run outer(0) run inner 1 outer destroy{cleanup outer cleanup inner 1 }outer destroy run inner 2 outer done cleanup inner 2 run outer(1) ")
+		})
+
+		it("handles forced destruction of parent within child", ()=>{
+			const owner = new Owner(null)
+
+			let order = ""
+			runWithOwner(owner, ()=>{
+				createEffect(()=>{
+					onCleanup(()=>{
+						order += "cleanup outer "
+					})
+					order += `run outer `
+
+					createEffect(()=>{
+						onCleanup(()=>{
+							order += "cleanup inner 1 "
+						})
+						order += "run inner 1 "
+
+						order += "outer destroy{"
+						owner.destroy()
+						order += "}outer destroy "
+					})
+
+					createEffect(()=>{
+						onCleanup(()=>{
+							order += "cleanup inner 2 "
+						})
+						order += "run inner 2 "
+					})
+					order += "outer done "
+				})
+			})
+
+			// Notice this is basically identical to the above test
+			assert.strictEqual(order, "run outer run inner 1 outer destroy{cleanup outer cleanup inner 1 }outer destroy run inner 2 outer done cleanup inner 2 ")
 		})
 
 		it("calls cleanup", () => {
@@ -789,12 +877,13 @@ describe("@dynein/state", () => {
 		// See https://github.com/adamhaile/S/issues/32
 		// Basically, the data().length shouldn't be run when data() is null
 		it("Sjs issue 32", ()=>{
+			let log = ""
 			createRoot(() => {
 				const data = createSignal(null, true)
 				const cache = createSignal(sample(() => !!data()))
 				const child = data => {
 					createEffect(() => {
-						console.log("nested", data().length)
+						log += "nested "+data().length+" "
 					});
 					return "Hi";
 				};
@@ -803,13 +892,15 @@ describe("@dynein/state", () => {
 				});
 				const memo = createMemo(() => (cache() ? child(data) : undefined));
 				createEffect(() => {
-					console.log("view", memo())
+					log += "view "+memo()+" "
 				});
-				console.log("ON");
+				log += "ON "
 				data("name");
-				console.log("OFF");
+				log += "OFF "
 				data(undefined);
 			})
+
+			assert.strictEqual(log, "view undefined ON nested 4 view Hi OFF view undefined ")
 		})
 
 		it("effect created inside an exec-pending effect", () => {
@@ -949,7 +1040,310 @@ describe("@dynein/state", () => {
 			signal(1)
 			assert.strictEqual(order, "!A !B A{1 }A ", "after set")
 		})
+
+		it("restores own context values on re-execute", ()=>{
+			let ctx = createContext(undefined)
+			const signal = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				runWithContext(ctx, 1, ()=>{
+					order += "init "
+					createEffect(()=>{
+						signal()
+						order += `run ${useContext(ctx)} `
+					})
+				})
+			})
+
+			order += `update (undefined) { `
+			signal(5)
+			order += `} `
+
+			order += `update (2) { `
+			runWithContext(ctx, 2, ()=>{
+				signal(10)
+			})
+			order += `} `
+
+			assert.strictEqual(order, "init run 1 update (undefined) { run 1 } update (2) { run 1 } ")
+		})
 	});
+
+	describe("createEffect (async)", () => {
+
+		it("handles synchronous deps", async ()=>{
+			const signal = createSignal(0)
+			let order = ""
+
+			createRoot(()=>{
+				createEffect(async ()=>{
+					order += "run "+signal()
+				})
+			})
+			assert.strictEqual(order, "run 0")
+			order = ""
+			await sleep(5)
+			signal(1)
+			assert.strictEqual(order, "run 1")
+		})
+
+
+		it("handles async deps", async ()=>{
+			const a = createSignal(0)
+			const b = createSignal(0)
+			let order = ""
+
+			createRoot(()=>{
+				createEffect(async ()=>{
+					order += "a = "+a()
+					await $s(sleep(0))
+					order += " b = "+b()
+				})
+			})
+
+			assert.strictEqual(order, "a = 0")
+			await sleep(30)
+			assert.strictEqual(order, "a = 0 b = 0")
+			order = ""
+			b(1)
+			assert.strictEqual(order, "a = 0")
+			await sleep(5)
+			assert.strictEqual(order, "a = 0 b = 1")
+		})
+
+		it("doesn't re-run when triggered while running", async ()=>{
+			const a = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(async ()=>{
+					order += "a = "+a()
+					await $s(sleep(20))
+					order += " done "
+				})
+			})
+
+			assert.strictEqual(order, "a = 0")
+			a(1)
+			assert.strictEqual(order, "a = 0")
+			await sleep(5)
+			a(2)
+			assert.strictEqual(order, "a = 0")
+			await sleep(20)
+			assert.strictEqual(order, "a = 0 done a = 2")
+			await sleep(20)
+			assert.strictEqual(order, "a = 0 done a = 2 done ")
+		})
+
+		it("calls onCleanup as expected", async ()=>{
+			const a = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(async ()=>{
+					onCleanup(()=>{
+						order += "onCleanup "
+					})
+					order += "a = "+a()+" "
+					await $s(sleep(20))
+					order += "done "
+				})
+			})
+
+			assert.strictEqual(order, "a = 0 ")
+			a(1)
+			assert.strictEqual(order, "a = 0 onCleanup ")
+			await sleep(5)
+			a(2)
+			assert.strictEqual(order, "a = 0 onCleanup ")
+			await sleep(20)
+			assert.strictEqual(order, "a = 0 onCleanup done a = 2 ")
+			await sleep(20)
+			assert.strictEqual(order, "a = 0 onCleanup done a = 2 done ")
+		})
+
+		it("handles forced destruction of parent within child", async ()=>{
+			const owner = new Owner(null)
+
+			let order = ""
+			runWithOwner(owner, ()=>{
+				createEffect(async ()=>{
+					onCleanup(()=>{
+						order += "cleanup outer "
+					})
+					order += `run outer `
+					await $s(sleep(5))
+
+					createEffect(()=>{
+						onCleanup(()=>{
+							order += "cleanup inner 1 "
+						})
+						order += "run inner 1 "
+
+						order += "outer destroy{"
+						owner.destroy()
+						order += "}outer destroy "
+					})
+					await $s(sleep(5))
+
+					createEffect(()=>{
+						onCleanup(()=>{
+							order += "cleanup inner 2 "
+						})
+						order += "run inner 2 "
+					})
+					order += "outer done "
+				})
+			})
+
+			assert.strictEqual(order, "run outer ")
+			await sleep(30)
+			assert.strictEqual(order, "run outer run inner 1 outer destroy{cleanup outer cleanup inner 1 }outer destroy run inner 2 outer done cleanup inner 2 ")
+		})
+	})
+
+	describe("$s (state stashing)", () => {
+		it("batches changes between awaits (1)", async ()=>{
+			let order = ""
+
+			const a = createSignal(0)
+			const b = createSignal(0)
+
+			createRoot(()=>{
+				createEffect(()=>{
+					order += `a = ${a()} b = ${b()} `
+				})
+
+				createEffect(async ()=>{
+					order += "start "
+					await $s(sleep(0))
+					a(1)
+					b(1)
+					order += "unblock "
+					await $s(sleep(0))
+					order += "done "
+				})
+			})
+
+			await sleep(30)
+			assert.strictEqual(order, "a = 0 b = 0 start unblock a = 1 b = 1 done ")
+		})
+
+		it("batches changes between awaits (2)", async ()=>{
+			let order = ""
+
+			const a = createSignal(0)
+			const b = createSignal(0)
+
+			createRoot(()=>{
+				createEffect(()=>{
+					order += `a = ${a()} b = ${b()} `
+				})
+
+				createEffect(async ()=>{
+					order += "start "
+					await $s(sleep(5))
+					a(1)
+					b(1)
+					order += "done "
+				})
+			})
+
+			await sleep(10)
+			assert.strictEqual(order, "a = 0 b = 0 start done a = 1 b = 1 ")
+		})
+
+		it("restores base values with no awaits", async ()=>{
+			createRoot(()=>{
+				createEffect(async ()=>{
+
+				})
+			})
+
+			assert.strictEqual(getOwner(), undefined)
+		})
+
+		it("restores base values while awaiting (1)", async ()=>{
+			createRoot(()=>{
+				createEffect(async ()=>{
+					await $s(sleep(20))
+				})
+			})
+
+			assert.strictEqual(getOwner(), undefined)
+			await sleep(0)
+			assert.strictEqual(getOwner(), undefined)
+		})
+
+		it("restores base values while awaiting (2)", async ()=>{
+			let order = ""
+			createRoot(()=>{
+				createEffect(async ()=>{
+					await $s(sleep(0))
+					await $s(sleep(20))
+				})
+			})
+
+			assert.strictEqual(getOwner(), undefined)
+			await sleep(10)
+			assert.strictEqual(getOwner(), undefined)
+		})
+
+		it("restores context values", async ()=>{
+			const ctx = createContext(undefined)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(async ()=>{
+					await $s(runWithContext(ctx, 0, async ()=>{
+						await $s(sleep(1))
+						order += `before = ${useContext(ctx)} `
+
+						await $s(runWithContext(ctx, 1, async ()=>{
+							await $s(sleep(1))
+							order += `inside = ${useContext(ctx)} `
+							await $s(sleep(1))
+						}))
+						order += `after = ${useContext(ctx)} `
+					}))
+					order += `outside = ${useContext(ctx)} `
+				})
+			})
+
+			await sleep(50)
+			assert.strictEqual(order, "before = 0 inside = 1 after = 0 outside = undefined ")
+		})
+
+		it("handles rejected promises", async ()=>{
+			const ctx = createContext(undefined)
+			let gotOwner = "NOT RUN"
+			let gotCtx = "NOT RUN"
+			let expectedOwner
+			createRoot(()=>{
+				createEffect(async ()=>{
+					expectedOwner = getOwner()
+					try {
+						await $s(sleep(1))
+
+						await $s(runWithContext(ctx, 1, async ()=>{
+							await $s(new Promise((resolve, reject) => {
+								setTimeout(()=>{
+									reject(new Error("Test err"))
+								}, 1)
+							}))
+						}))
+					} catch (err) {
+						gotOwner = getOwner()
+						gotCtx = useContext(ctx)
+					}
+				})
+			})
+			await sleep(50)
+			assert.strictEqual(gotOwner, expectedOwner)
+			assert.strictEqual(gotCtx, undefined)
+		})
+	})
 
 	describe("onUpdate", () => {
 		it("calls inner only after the first update after setup", () => {
@@ -961,6 +1355,7 @@ describe("@dynein/state", () => {
 				});
 			});
 			assert.strictEqual(count, 0);
+			stashState()
 			signal(1);
 			assert.strictEqual(count, 1);
 		});
@@ -1525,6 +1920,19 @@ describe("@dynein/state", () => {
 			})
 
 			assert.strictEqual(innerOwner, undefined)
+		})
+
+		it("returns the same owner within an effect", ()=>{
+			let innerOwner1
+			let innerOwner2
+			createRoot(()=>{
+				createEffect(()=>{
+					innerOwner1 = getOwner()
+					innerOwner2 = getOwner()
+				})
+			})
+
+			assert.strictEqual(innerOwner1, innerOwner2)
 		})
 
 		it("passes dependency collection when saved in a tracking context", ()=>{
