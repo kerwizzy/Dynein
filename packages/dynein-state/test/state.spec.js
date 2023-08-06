@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onCleanup, createRoot, untrack, sample, retrack, batch, schedule, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, runWithBaseState, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
+import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, schedule, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, runWithBaseState, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -1444,6 +1444,343 @@ describe("@dynein/state", () => {
 			assert.strictEqual(count, 1);
 			assert.strictEqual(calledWithVal, 12);
 		});
+
+		it("does not execute till batch end", () => {
+			const signal = createSignal(0);
+			let order = ""
+			createRoot(() => {
+				order += "init "
+				onUpdate(signal, (val) => {
+					order += "run "+val+" "
+				});
+			});
+
+			order += "batch{"
+			batch(()=>{
+				order += "write{"
+				signal(1);
+				order += "}write "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "init batch{write{}write run 1 }batch ")
+		})
+
+		it("runs cleanups before listener inners", ()=>{
+			const signal = createSignal(0)
+
+			let order = ""
+
+			createRoot(()=>{
+				onUpdate(signal, (val)=>{
+					onCleanup(()=>{
+						order += `cleanup a(${val}) `
+					})
+					order += `run a(${val}) `
+				})
+				onUpdate(signal, (val)=>{
+					onCleanup(()=>{
+						order += `cleanup b(${val}) `
+					})
+					order += `run b(${val}) `
+				})
+			})
+
+			order += "write 1 "
+			signal(1)
+			order += "write 2 "
+			signal(2)
+			assert.strictEqual(order, "write 1 run a(1) run b(1) write 2 cleanup a(1) cleanup b(1) run a(2) run b(2) ")
+		})
+	})
+
+	describe("onWrite", () => {
+		it("does reexecute on equal data update", () => {
+			const signal = createSignal(0, true);
+			let count = 0;
+			createRoot(() => {
+				onWrite(signal, () => {
+					count++;
+				});
+			});
+			assert.strictEqual(count, 0);
+			signal(0);
+			assert.strictEqual(count, 1);
+			signal(0);
+			assert.strictEqual(count, 2);
+		});
+
+		it("calls inner with the latest value", () => {
+			const signal = createSignal(0);
+			let count = 0;
+			let calledWithVal = -1
+			createRoot(() => {
+				onWrite(signal, (val) => {
+					count++
+					calledWithVal = val
+				});
+			});
+			assert.strictEqual(count, 0);
+			signal(12);
+			assert.strictEqual(count, 1);
+			assert.strictEqual(calledWithVal, 12);
+		});
+
+		it("executes immediately before write exits", () => {
+			const signal = createSignal(0);
+			let order = ""
+			createRoot(() => {
+				order += "init "
+				onWrite(signal, (val) => {
+					order += "run "+val+" "
+				});
+			});
+
+			order += "batch{"
+			batch(()=>{
+				order += "write{"
+				signal(1);
+				order += "}write "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "init batch{write{run 1 }write }batch ")
+		})
+
+		it("catches errors", ()=>{
+			const signal = createSignal(0);
+
+			let order = ""
+			createRoot(()=>{
+				onWrite(signal, () => {
+					order += "throw "
+					throw new Error("Test err")
+				});
+				onWrite(signal, () => {
+					order += "other onWrite "
+				});
+			})
+
+			order += "write "
+			signal(1)
+
+			assert.strictEqual(order, "write throw other onWrite ")
+		})
+
+		it("runs listeners within their own ownership context", ()=>{
+			const signal = createSignal(0);
+			const a = createSignal(0)
+
+			let order = ""
+
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "run A "
+					a()
+
+					onCleanup(()=>{
+						order += "cleanup A "
+					})
+					onWrite(signal, (val)=>{
+						order += `onWrite(${val}) `
+						onCleanup(()=>{
+							order += `cleanup onWrite(${val}) `
+						})
+					})
+				})
+
+				createEffect(()=>{
+					order += "write signal(1){"
+					signal(1)
+					order += "}write signal(1) "
+				})
+			})
+
+			order += "write signal(2){"
+			signal(2)
+			order += "}write signal(2) "
+
+			order += "write a(1){"
+			a(1)
+			order += "}write a(1) "
+
+			assert.strictEqual(order, "run A write signal(1){onWrite(1) }write signal(1) write signal(2){cleanup onWrite(1) onWrite(2) }write signal(2) write a(1){cleanup A cleanup onWrite(2) run A }write a(1) ")
+		})
+
+		// Matches onUpdate test
+		it("runs cleanups before listener inners", ()=>{
+			const signal = createSignal(0)
+
+			let order = ""
+
+			createRoot(()=>{
+				onWrite(signal, (val)=>{
+					onCleanup(()=>{
+						order += `cleanup a(${val}) `
+					})
+					order += `run a(${val}) `
+				})
+				onWrite(signal, (val)=>{
+					onCleanup(()=>{
+						order += `cleanup b(${val}) `
+					})
+					order += `run b(${val}) `
+				})
+			})
+
+			order += "write 1 "
+			signal(1)
+			order += "write 2 "
+			signal(2)
+			assert.strictEqual(order, "write 1 run a(1) run b(1) write 2 cleanup a(1) cleanup b(1) run a(2) run b(2) ")
+		})
+
+		it("does not track deps (init)", ()=>{
+			const signal = createSignal(0)
+
+			let state
+			createRoot(()=>{
+				createEffect(()=>{
+					onWrite(signal, ()=>{
+						state = _getInternalState()
+					})
+					signal(1)
+				})
+			})
+
+			assert.strictEqual(state.collectingDependencies, false)
+			assert.strictEqual(state.assertedStatic, false)
+		})
+
+		it("does not track deps (after init)", ()=>{
+			const signal = createSignal(0)
+
+			let state
+			createRoot(()=>{
+				createEffect(()=>{
+					onWrite(signal, ()=>{
+						state = _getInternalState()
+					})
+				})
+			})
+
+			signal(1)
+
+			assert.strictEqual(state.collectingDependencies, false)
+			assert.strictEqual(state.assertedStatic, false)
+		})
+
+		it("executes secondary writes in a batch", ()=>{
+			const signal = createSignal(0)
+
+			let a = createSignal(0)
+			let b = createSignal(0)
+			let c = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "AB{"
+					a()
+					b()
+					order += "}AB "
+				})
+
+				createEffect(()=>{
+					order += "C{"
+					c()
+					order += "}C "
+				})
+
+				onWrite(signal, ()=>{
+					order += "listener1{"
+					a(1)
+					b(1)
+					order += "}listener1 "
+				})
+
+				onWrite(signal, ()=>{
+					order += "listener2{"
+					c(1)
+					order += "}listener2 "
+				})
+			})
+
+			order += "write{"
+			signal(1)
+			order += "}write "
+
+			assert.strictEqual(order, "AB{}AB C{}C write{listener1{}listener1 listener2{}listener2 AB{}AB C{}C }write ")
+		})
+
+		it("executes secondary writes within the writer's update queue", ()=>{
+			const signal = createSignal(0)
+
+			let a = createSignal(0)
+			let b = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					order += "}A "
+				})
+
+				createEffect(()=>{
+					order += "B{"
+					b()
+					order += "}B "
+				})
+
+				onWrite(signal, ()=>{
+					order += "setB{"
+					b(1)
+					order += "}setB "
+				})
+			})
+
+			order += "batch{"
+			batch(()=>{
+				a(1)
+
+				order += "subclock{"
+				subclock(()=>{
+					order += "writeSignal{"
+					signal(1)
+					order += "}writeSignal "
+				})
+				order += "}subclock "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "A{}A B{}B batch{subclock{writeSignal{setB{}setB B{}B }writeSignal }subclock A{}A }batch ")
+		})
+
+		it("disappears on cleanup", ()=>{
+			const owner = new Owner(null)
+			const signal = createSignal(0)
+
+			let order = ""
+			runWithOwner(owner, ()=>{
+				onWrite(signal, (val)=>{
+					order += `val=${val} `
+				})
+			})
+
+			order += "write(1){"
+			signal(1)
+			order += "}write(1) "
+
+			order += "destroy "
+			owner.destroy()
+
+			order += "write(2){"
+			signal(2)
+			order += "}write(2) "
+
+			assert.strictEqual(order, "write(1){val=1 }write(1) destroy write(2){}write(2) ")
+		})
 	})
 
 	describe("untrack", () => {

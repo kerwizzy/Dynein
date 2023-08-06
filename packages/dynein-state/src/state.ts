@@ -257,7 +257,10 @@ export class Owner implements Destructable {
 }
 
 export type Signal<T> = (() => T) & (<U extends T>(newVal: U) => U) & {[isSignalSymbol]: true}
+export type ReadableSignal<T> = (() => T) & {[isSignalSymbol]: true}
 
+const onWriteListenersSymbol = Symbol("onWriteListeners")
+const onWriteOwnersSymbol = Symbol("onWriteOwners")
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
 		if (arguments.length === 0) {
@@ -270,13 +273,63 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 				);
 			}
 			setter(newVal!);
+			//@ts-ignore
+			if (signalWrapper[onWriteListenersSymbol] && signalWrapper[onWriteListenersSymbol].size > 0) {
+				runWithBaseStateButKeepUpdateQueue(()=>{
+					batch(()=>{
+						//@ts-ignore
+						for (const owner of signalWrapper[onWriteOwnersSymbol]) {
+							owner.reset()
+						}
+						//@ts-ignore
+						for (const listener of signalWrapper[onWriteListenersSymbol]) {
+							try {
+								listener(newVal!)
+							} catch (err) {
+								console.warn("Caught error in onWrite listener:", err)
+							}
+						}
+					})
+				})
+			}
 			return newVal!;
 		}
 	} as Signal<T>;
 	//@ts-ignore
 	signalWrapper[isSignalSymbol] = true;
+
+	// TODO: should we set signalWrapper[onWriteListenersSymbol] and onWriteOwnersSymbol to null here to reduce polymorphism?
+
 	//@ts-ignore
 	return signalWrapper;
+}
+
+export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) => void): void {
+	//@ts-ignore
+	if (!getter[onWriteListenersSymbol]) {
+		//@ts-ignore
+		getter[onWriteListenersSymbol] = new Set()
+		//@ts-ignore
+		getter[onWriteOwnersSymbol] = new Set()
+	}
+
+	const owner = new Owner()
+	const wrappedListener = (val: T)=>{
+		updateState(false, false, owner, owner.contextValues, ()=>{
+			listener(val)
+		})
+	}
+
+	//@ts-ignore
+	getter[onWriteListenersSymbol].add(wrappedListener)
+	//@ts-ignore
+	getter[onWriteOwnersSymbol].add(owner)
+	onCleanup(()=>{
+		//@ts-ignore
+		getter[onWriteListenersSymbol].delete(wrappedListener)
+		//@ts-ignore
+		getter[onWriteOwnersSymbol].delete(owner)
+	})
 }
 
 export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal<T> {
@@ -414,7 +467,7 @@ class UpdateQueue {
 						try {
 							fn()
 						} catch (err) {
-							console.warn("Caught error", err, "in onTickEnd function", fn);
+							console.warn("Caught error in onBatchEnd function:", err);
 						}
 					}
 				})
@@ -426,7 +479,7 @@ class UpdateQueue {
 				try {
 					fn();
 				} catch (err) {
-					console.warn("Caught error", err, "in tick function", fn);
+					console.warn("Caught error in tick function:", err);
 				}
 			}
 		}
