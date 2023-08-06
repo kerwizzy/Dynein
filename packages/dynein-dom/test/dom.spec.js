@@ -1,5 +1,5 @@
-import { createRoot, createSignal, toSignal, createEffect, batch } from "@dynein/state"
-import { addPortal, elements, addIf, addAsyncReplaceable, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
+import { createRoot, createSignal, toSignal, createEffect, batch, $s, Owner, runWithOwner, onCleanup } from "@dynein/state"
+import { addPortal, elements, addIf, addAsyncReplaceable, addAsync, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
 
 function mount(inner) {
 	let test
@@ -9,6 +9,19 @@ function mount(inner) {
 		})
 	})
 	return {body: test}
+}
+
+process.on('unhandledRejection', (reason) => {
+	console.log("unhandled rejection", reason)
+	throw reason;
+});
+
+function sleep(ms = 1) {
+	return new Promise((resolve) => {
+		setTimeout(()=>{
+			resolve()
+		}, ms)
+	})
 }
 
 describe("@dynein/dom", ()=>{
@@ -664,6 +677,116 @@ describe("@dynein/dom", ()=>{
 			assert.doesNotThrow(()=>{
 				signal(0)
 			})
+		})
+
+		it("handles async functions", async ()=>{
+			const document = mount(()=>{
+				addDynamic(async ()=>{
+					elements.div("before")
+					await $s(sleep(1))
+					elements.div("after")
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div><div>after</div>`)
+		})
+
+		it("handles async deps", async ()=>{
+			const signal = createSignal(0)
+
+			const document = mount(()=>{
+				addDynamic(async ()=>{
+					elements.div("before")
+					await $s(sleep(1))
+					elements.div("after = "+signal())
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div><div>after = 0</div>`)
+			signal(1)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div><div>after = 1</div>`)
+		})
+
+		it("handles async destruction while rendering", async ()=>{
+			const signal = createSignal(0)
+
+			let order = ""
+			const document = mount(()=>{
+				addDynamic(()=>{
+					order += "run outer "
+					if (!signal()) {
+						addDynamic(async ()=>{
+							onCleanup(()=>{
+								order += "cleanup inner "
+							})
+							order += "before "
+							elements.div("before")
+							await $s(sleep(1))
+							order += "after "
+							elements.div("after")
+						})
+					}
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			order += "write signal "
+			signal(1)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			assert.strictEqual(order, "run outer before write signal cleanup inner run outer after ")
+		})
+	})
+
+	describe("addAsync", ()=>{
+		it("adds nodes asynchronously", async ()=>{
+			const document = mount(()=>{
+				addAsync(async ()=>{
+					elements.div("before")
+					await $s(sleep(1))
+					elements.div("after")
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div><div>after</div>`)
+		})
+
+		it("handles async destruction while rendering", async ()=>{
+			const signal = createSignal(0)
+
+			let order = ""
+			const document = mount(()=>{
+				addDynamic(()=>{
+					order += "run outer "
+					if (!signal()) {
+						addAsync(async ()=>{
+							onCleanup(()=>{
+								order += "cleanup inner "
+							})
+							order += "before "
+							elements.div("before")
+							await $s(sleep(1))
+							order += "after "
+							elements.div("after")
+						})
+					}
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			order += "write signal "
+			signal(1)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			assert.strictEqual(order, "run outer before write signal cleanup inner run outer after ")
 		})
 	})
 

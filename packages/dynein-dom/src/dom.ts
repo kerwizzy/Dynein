@@ -1,4 +1,4 @@
-import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal } from "@dynein/state"
+import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, addStateStasher } from "@dynein/state"
 
 type Primitive = string | number | boolean | undefined | null;
 
@@ -92,12 +92,30 @@ type ElementTagNameMapForNamespace = {
 // Internal variables and functions used when building DOM structures
 let insertTarget: Node | null = null;
 let insertBeforeNode: Node | null = null;
+let disableInsert: boolean = false
+
+addStateStasher(()=>{
+	const old_insertTarget = insertTarget
+	const old_insertBeforeNode = insertBeforeNode
+	const old_disableInsert = disableInsert
+
+	return ()=>{
+		insertTarget = old_insertTarget
+		insertBeforeNode = old_insertBeforeNode
+		disableInsert = old_disableInsert
+		if (insertBeforeNode && !insertBeforeNode?.parentNode) {
+			disableInsert = true
+		}
+	}
+})
 
 export function addNode<T extends Node>(node: T): T {
-	if (insertTarget === null) {
-		throw new Error("not rendering");
+	if (!disableInsert) {
+		if (insertTarget === null) {
+			throw new Error("not rendering");
+		}
+		insertTarget.insertBefore(node, insertBeforeNode); // if insertBeforeNode is null, just added to end
 	}
-	insertTarget.insertBefore(node, insertBeforeNode); // if insertBeforeNode is null, just added to end
 	return node;
 }
 
@@ -375,6 +393,16 @@ export function addDynamic(inner: () => void): void {
 			});
 		}
 	);
+}
+
+export function addAsync(inner: () => void): void {
+	replacementArea(
+		addNode(document.createComment("<async-append>")),
+		addNode(document.createComment("</async-append>")),
+		($r)=>{
+			$r(inner)
+		}
+	)
 }
 
 export function addIf(ifCond: () => any, inner: () => void) {
