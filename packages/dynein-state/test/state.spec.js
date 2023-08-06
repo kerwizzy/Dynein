@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onCleanup, createRoot, untrack, sample, retrack, batch, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
+import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onCleanup, createRoot, untrack, sample, retrack, batch, schedule, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, runWithBaseState, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js";
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -874,6 +874,43 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{Sclock{B{1}B A{2}A s{2 a++{}a++ b++{Sclock{B{2}B A{3}A s{3 }s ");
 		})
 
+		it("subclock doesn't leak state to schedule", ()=>{
+			let state = "NOT RUN"
+
+			createRoot(()=>{
+				createEffect(()=>{
+					subclock(()=>{
+						schedule(()=>{
+							state = _getInternalState()
+						})
+					})
+				})
+			})
+
+			assert.strictEqual(state.currentOwner, undefined)
+			assert.strictEqual(state.assertedStatic, false)
+			assert.strictEqual(state.collectingDependencies, false)
+		})
+
+		it("subclock doesn't leak state to onBatchEnd", ()=>{
+			let state = "NOT RUN"
+
+			createRoot(()=>{
+				createEffect(()=>{
+					subclock(()=>{
+						onBatchEnd(()=>{
+							state = _getInternalState()
+						})
+					})
+				})
+			})
+
+			assert.strictEqual(state.currentOwner, undefined)
+			assert.strictEqual(state.assertedStatic, false)
+			assert.strictEqual(state.collectingDependencies, false)
+		})
+
+
 		// See https://github.com/adamhaile/S/issues/32
 		// Basically, the data().length shouldn't be run when data() is null
 		it("Sjs issue 32", ()=>{
@@ -939,7 +976,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "cleanup inner(1) run inner(1) ");
 		})
 
-		// These two tests maybe aren't the most preferable behavior, but its an edge case and
+		// This test maybe isn't the most preferable behavior, but its an edge case and
 		// there doesn't seem to be an easy way to fix it. In real world-scenarios where you have
 		// a self-triggering effect like this (e.g., effect checks a precondition and then
 		// fixes it), you should probably return at the end of the `if (!a()) {` block and then
@@ -1716,6 +1753,157 @@ describe("@dynein/state", () => {
 		});
 	});
 
+	describe("schedule", ()=>{
+		it("runs immediately outside of a batch", ()=>{
+			let ran = false
+			schedule(()=>{
+				ran = true
+			})
+			assert.strictEqual(ran, true)
+		})
+
+		it("runs at the end of a batch", ()=>{
+			let order = ""
+			batch(()=>{
+				order += "a "
+				schedule(()=>{
+					order += "end"
+				})
+				order += "b "
+			})
+			assert.strictEqual(order, "a b end")
+		})
+
+		it("runs at the end of all batches", ()=>{
+			let order = ""
+			batch(()=>{
+				order += "a "
+
+				batch(()=>{
+					order += "b "
+					batch(()=>{
+						order += "c "
+						schedule(()=>{
+							order += "end"
+						})
+						order += "d "
+					})
+					order += "e "
+				})
+				order += "f "
+			})
+			assert.strictEqual(order, "a b c d e f end")
+		})
+
+		it("runs in order with effects in a batch", ()=>{
+			let a = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					order += "}A "
+				})
+			})
+
+
+			order += "B{"
+			batch(()=>{
+				order+= "#1 "
+				schedule(()=>{
+					order += "end "
+				})
+				order+= "#2 "
+				a(1)
+				order+= "#3 "
+			})
+			order += "}B"
+			assert.strictEqual(order, "A{}A B{#1 #2 #3 end A{}A }B")
+		})
+
+		it("batches its own changes", ()=>{
+			let a = createSignal(0)
+			let b = createSignal(0)
+			let c = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "AB{"
+					a()
+					b()
+					order += "}AB "
+				})
+
+				createEffect(()=>{
+					order += "C{"
+					c()
+					order += "}C "
+				})
+			})
+
+			order += "batch{"
+			batch(()=>{
+				order += "#1 "
+				schedule(()=>{
+					order += "schedule{ "
+					a(1)
+					b(2)
+					order += "}schedule "
+				})
+				order += "#2 "
+				c(1)
+				order += "#3 "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "AB{}AB C{}C batch{#1 #2 #3 schedule{ }schedule C{}C AB{}AB }batch ")
+		})
+
+		it("batches its own changes even when called at root", ()=>{
+			let a = createSignal(0)
+			let b = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "AB{"
+					a()
+					b()
+					order += "}AB "
+				})
+			})
+
+			schedule(()=>{
+				order += "schedule{ "
+				a(1)
+				b(2)
+				order += "}schedule "
+			})
+
+			assert.strictEqual(order, "AB{}AB schedule{ }schedule AB{}AB ")
+		})
+
+		it("does not pass errors (1)", ()=>{
+			assert.doesNotThrow(()=>{
+				schedule(()=>{
+					throw new Error("test")
+				})
+			})
+		})
+
+		it("does not pass errors (2)", ()=>{
+			assert.doesNotThrow(()=>{
+				batch(()=>{
+					schedule(()=>{
+						throw new Error("test")
+					})
+				})
+			})
+		})
+	})
+
 	describe("onBatchEnd", ()=>{
 		it("runs immediately outside of a batch", ()=>{
 			let ran = false
@@ -1758,7 +1946,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "a b c d e f end")
 		})
 
-		it("runs in order with effects in a batch", ()=>{
+		it("runs after all effects in a batch", ()=>{
 			let a = createSignal(0)
 
 			let order = ""
@@ -1782,7 +1970,126 @@ describe("@dynein/state", () => {
 				order+= "#3 "
 			})
 			order += "}B"
-			assert.strictEqual(order, "A{}A B{#1 #2 #3 end A{}A }B")
+			assert.strictEqual(order, "A{}A B{#1 #2 #3 A{}A end }B")
+		})
+
+		it("all onBatchEnd changes are batched", ()=>{
+			let a = createSignal(0)
+			let b = createSignal(0)
+			let c = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					b()
+					c()
+					order += "}A "
+				})
+			})
+
+
+			order += "B{"
+			batch(()=>{
+				order+= "#1 "
+				onBatchEnd(()=>{
+					order += "end0 "
+					a(2)
+					b(2)
+				})
+				onBatchEnd(()=>{
+					order += "end1 "
+					c(2)
+				})
+				order+= "#2 "
+				a(1)
+				order+= "#3 "
+			})
+			order += "}B"
+			assert.strictEqual(order, "A{}A B{#1 #2 #3 A{}A end0 end1 A{}A }B")
+		})
+
+		it("second-level onBatchEnds run before effects triggered by onBatchEnd", ()=>{
+			let a = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					order += "}A "
+				})
+			})
+
+
+			order += "B{"
+			batch(()=>{
+				order+= "#1 "
+				onBatchEnd(()=>{
+					order += "end0 "
+					a(2)
+					onBatchEnd(()=>{
+						order += "nested "
+					})
+				})
+				onBatchEnd(()=>{
+					order += "end1 "
+				})
+				order+= "#2 "
+				a(1)
+				order+= "#3 "
+			})
+			order += "}B"
+			assert.strictEqual(order, "A{}A B{#1 #2 #3 A{}A end0 end1 nested A{}A }B")
+		})
+
+		it("runs second-order triggers at the end of a subclock queue, not in the root queue", ()=>{
+			let a = createSignal(0)
+			let b = createSignal(0)
+
+			let order = ""
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					order += "}A "
+				})
+
+				createEffect(()=>{
+					order += "B{"
+					b()
+					order += "}B "
+				})
+			})
+
+			order += "batch{"
+			batch(()=>{
+				a(1)
+				onBatchEnd(()=>{
+					order += "aBatchEnd "
+				})
+
+				order += "subclock{"
+				subclock(()=>{
+					b(1)
+					onBatchEnd(()=>{
+						order += "bBatchEnd "
+						schedule(()=>{
+							order += "nested1{"
+							b(2)
+							order += "}nested1 "
+						})
+						onBatchEnd(()=>{
+							order += "nested2 "
+						})
+					})
+				})
+				order += "}subclock "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "A{}A B{}B batch{subclock{B{}B bBatchEnd nested2 nested1{}nested1 B{}B }subclock A{}A aBatchEnd }batch ")
 		})
 
 		it("does not pass errors (1)", ()=>{
@@ -1801,6 +2108,78 @@ describe("@dynein/state", () => {
 					})
 				})
 			})
+		})
+	})
+
+	describe("runWithBaseState", ()=>{
+		it("runs the passed code with all state cleared", ()=>{
+			const ctx = createContext(undefined)
+
+			let innerState
+			let innerCtx
+
+			let afterState
+			let afterCtx
+
+			createRoot(()=>{
+				createEffect(()=>{
+					runWithContext(ctx, 1, ()=>{
+						runWithBaseState(()=>{
+							innerState = _getInternalState()
+							innerCtx = useContext(ctx)
+						})
+
+						afterState = _getInternalState()
+						afterCtx = useContext(ctx)
+					})
+				})
+			})
+
+			assert.strictEqual(innerState.currentOwner, undefined)
+			assert.strictEqual(innerState.assertedStatic, false)
+			assert.strictEqual(innerState.collectingDependencies, false)
+			assert.strictEqual(innerCtx, undefined)
+
+			assert.strictEqual(!!afterState.currentOwner, true)
+			assert.strictEqual(afterState.assertedStatic, false)
+			assert.strictEqual(afterState.collectingDependencies, true)
+			assert.strictEqual(afterCtx, 1)
+		})
+
+		it("doesn't start other pending effects", ()=>{
+			const a = createSignal(0)
+			const b = createSignal(0)
+
+			let order = ""
+
+			createRoot(()=>{
+				createEffect(()=>{
+					order += "A{"
+					a()
+					order += "}A "
+				})
+
+				createEffect(()=>{
+					order += "B{"
+					b()
+					order += "}B "
+				})
+			})
+
+			order += "batch{"
+			batch(()=>{
+				a(1)
+				order += "runWithBaseState{"
+				runWithBaseState(()=>{
+					order += "setB{"
+					b(1)
+					order += "}setB "
+				})
+				order += "}runWithBaseState "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "A{}A B{}B batch{runWithBaseState{setB{}setB }runWithBaseState A{}A B{}B }batch ")
 		})
 	})
 

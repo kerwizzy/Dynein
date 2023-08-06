@@ -340,8 +340,15 @@ export function batch(fn: () => void) {
 	currentUpdateQueue.delayStart(fn);
 }
 
+export function schedule(fn: ()=>void) {
+	currentUpdateQueue.schedule(()=>{
+		runWithBaseStateButKeepUpdateQueue(fn)
+	})
+}
+
 export function onBatchEnd(fn: ()=>void) {
-	currentUpdateQueue.schedule(fn)
+	currentUpdateQueue.onTickEnd.add(fn)
+	currentUpdateQueue.start()
 }
 
 export function subclock(fn: () => void) {
@@ -364,6 +371,7 @@ class UpdateQueue {
 	parent: UpdateQueue | null;
 	thisTick: Set<() => void>;
 	nextTick: Set<() => void>;
+	onTickEnd: Set<() => void>;
 	ticking: boolean;
 	startDelayed: boolean;
 
@@ -371,6 +379,7 @@ class UpdateQueue {
 		this.parent = parent;
 		this.thisTick = new Set();
 		this.nextTick = new Set();
+		this.onTickEnd = new Set();
 		this.ticking = false;
 		this.startDelayed = false;
 	}
@@ -383,20 +392,35 @@ class UpdateQueue {
 		let subTickN = 0;
 		this.ticking = true;
 		while (true) {
-			const tmp = this.thisTick;
-			this.thisTick = this.nextTick;
-			this.nextTick = tmp;
-			this.nextTick.clear();
-
-			if (this.thisTick.size === 0) {
-				break;
-			}
 			if (subTickN > 10000) {
 				console.warn("Runaway update detected");
 				break;
 			}
 
 			subTickN++;
+
+			const tmp = this.thisTick;
+			this.thisTick = this.nextTick;
+			this.nextTick = tmp;
+			this.nextTick.clear();
+
+			if (this.thisTick.size === 0) {
+				if (this.onTickEnd.size === 0) {
+					break
+				}
+				runWithBaseStateButKeepUpdateQueue(()=>{
+					for (const fn of this.onTickEnd) {
+						this.onTickEnd.delete(fn)
+						try {
+							fn()
+						} catch (err) {
+							console.warn("Caught error", err, "in onTickEnd function", fn);
+						}
+					}
+				})
+				continue; // the onTickEnd functions might have added more stuff to nextTick
+			}
+
 			for (const fn of this.thisTick) {
 				this.thisTick.delete(fn);
 				try {
@@ -588,6 +612,27 @@ let basicRestoreBaseState = ()=>{}
 const restoreBaseState = ()=>{
 	basicRestoreBaseState()
 	currentUpdateQueue.start()
+}
+
+const rootUpdateQueue = currentUpdateQueue
+export function runWithBaseState<T>(inner: ()=>T): T {
+	const old_rootUpdateQueue_startDelayed = rootUpdateQueue.startDelayed
+	const restore = stashAllState()
+	try {
+		basicRestoreBaseState()
+		rootUpdateQueue.startDelayed = old_rootUpdateQueue_startDelayed
+		return inner()
+	} finally {
+		restore()
+	}
+}
+
+function runWithBaseStateButKeepUpdateQueue(inner: ()=>void) {
+	const old_currentUpdateQueue = currentUpdateQueue
+	runWithBaseState(()=>{
+		currentUpdateQueue = old_currentUpdateQueue
+		inner()
+	})
 }
 
 export function addStateStasher(stasher: StateStasher) {
