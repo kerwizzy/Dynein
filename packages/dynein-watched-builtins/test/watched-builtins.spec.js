@@ -1,4 +1,4 @@
-import { createRoot, createSignal, onCleanup, onUpdate } from "@dynein/state"
+import { createRoot, createSignal, onCleanup, onUpdate, onWrite } from "@dynein/state"
 import { ReactiveArray } from "../built/ReactiveArray.js"
 
 describe("@dynein/watched-builtins", () => {
@@ -201,7 +201,7 @@ describe("@dynein/watched-builtins", () => {
 				assert.strictEqual(Array.from(filtered).join(","), "a,b,c,d")
 
 				const log = []
-				onUpdate(filtered.array.spliceEvent, (evt)=>{
+				onWrite(filtered.array.spliceEvent, (evt)=>{
 					if (!evt) {
 						return
 					}
@@ -257,7 +257,7 @@ describe("@dynein/watched-builtins", () => {
 
 
 				const log = []
-				onUpdate(sorted.array.spliceEvent, (evt)=>{
+				onWrite(sorted.array.spliceEvent, (evt)=>{
 					if (!evt) {
 						return
 					}

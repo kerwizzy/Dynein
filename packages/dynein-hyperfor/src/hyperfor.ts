@@ -1,4 +1,4 @@
-import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal } from "@dynein/state"
+import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal, onWrite } from "@dynein/state"
 import { addNode, setInsertionState } from "@dynein/dom"
 import { WatchedArray } from "@dynein/watched-builtins"
 
@@ -96,7 +96,7 @@ class Hyperfor<T> {
 	}
 
 	private setupSpliceWatcher() {
-		onUpdate(this.arr.spliceEvent, (evt) => {
+		onWrite(this.arr.spliceEvent, (evt) => {
 			if (!evt) {
 				this.reset()
 			} else {

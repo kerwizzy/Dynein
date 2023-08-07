@@ -1,5 +1,5 @@
 import WatchedArray from "./WatchedArray.js"
-import { Signal, createSignal, sample, batch, onUpdate, createEffect, Owner, runWithOwner, getOwner, assertStatic, untrack } from "@dynein/state"
+import { Signal, createSignal, sample, batch, onUpdate, createEffect, Owner, runWithOwner, getOwner, assertStatic, untrack, onWrite } from "@dynein/state"
 
 type ReactiveArrayItem<T> = {
 	value: T,
@@ -71,7 +71,7 @@ export class MappableReactiveArray<T> {
 
 		mapped.array.value(this.rawArray.map(mapItem))
 
-		onUpdate(this.array.spliceEvent, (evt)=>{
+		onWrite(this.array.spliceEvent, (evt)=>{
 			if (!evt) {
 				return
 			}
@@ -98,7 +98,7 @@ export class MappableReactiveArray<T> {
 			}
 		}
 
-		onUpdate(intermediate.array.spliceEvent, (evt) => {
+		onWrite(intermediate.array.spliceEvent, (evt) => {
 			if (!evt) {
 				return
 			}
@@ -177,7 +177,7 @@ export class MappableReactiveArray<T> {
 			sortedArr[i].index(i)
 		}
 
-		onUpdate(this.array.spliceEvent, (evt)=>{
+		onWrite(this.array.spliceEvent, (evt)=>{
 			if (!evt) {
 				return
 			}
@@ -216,7 +216,7 @@ export class MappableReactiveArray<T> {
 		const destructables = this.rawArray.map(handleItem)
 
 		const outerOwner = getOwner()
-		onUpdate(this.array.spliceEvent, (evt)=>{
+		onWrite(this.array.spliceEvent, (evt)=>{
 			if (!evt) {
 				return
 			}
@@ -234,7 +234,7 @@ export class MappableReactiveArray<T> {
 	static fromWatchedArray<T>(arr: WatchedArray<T>): MappableReactiveArray<T> {
 		const out = new ReactiveArray(sample(arr.value))
 
-		onUpdate(arr.spliceEvent, (evt)=>{
+		onWrite(arr.spliceEvent, (evt)=>{
 			if (!evt) {
 				return
 			}

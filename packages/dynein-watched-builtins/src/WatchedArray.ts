@@ -19,10 +19,7 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 				// to read the updated array value
 				baseSignal(value)
 
-				// See comment below in .splice for why subclock is needed
-				subclock(()=>{
-					this.spliceEvent(null)
-				})
+				this.spliceEvent(null)
 			} else {
 				baseSignal(value)
 			}
@@ -77,11 +74,7 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 		}
 		const removed = this.v.splice(start, remove, ...insert)
 
-		// Use subclock to ensure that any listeners on spliceEvent fire for each splice, not just
-		// at the end if we're inside a batch.
-		subclock(()=>{
-			this.spliceEvent([start, insert, removed])
-		})
+		this.spliceEvent([start, insert, removed])
 
 		this.fire()
 		return removed
