@@ -1,4 +1,4 @@
-import { createRoot, createSignal, toSignal, createEffect, batch, $s, Owner, runWithOwner, onCleanup } from "@dynein/state"
+import { createRoot, createSignal, toSignal, createEffect, batch, $s, Owner, runWithOwner, onCleanup, onUpdate } from "@dynein/state"
 import { addPortal, elements, addIf, addAsyncReplaceable, addAsync, addDynamic, addNode, addHTML, addText } from "@dynein/dom"
 
 function mount(inner) {
@@ -788,6 +788,17 @@ describe("@dynein/dom", ()=>{
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
 			assert.strictEqual(order, "run outer before write signal cleanup inner run outer after ")
 		})
+
+		it("returns the result of inner", ()=>{
+			let val
+			mount(()=>{
+				val = addAsync(()=>{
+					return 5
+				})
+			})
+
+			assert.strictEqual(val, 5)
+		})
 	})
 
 	describe("addAsyncReplaceable", ()=>{
@@ -838,6 +849,40 @@ describe("@dynein/dom", ()=>{
 					assert.strictEqual(count, 2, "update after watcher should be destroyed")
 				})
 			})
+		})
+
+		it("calls inner but does not add to the dom when destroyed", ()=>{
+			const signal = createSignal(0)
+
+			let ranShouldntShowUp = false
+			const document = mount(()=>{
+				addDynamic(()=>{
+					if (!signal()) {
+						addAsyncReplaceable(($r)=>{
+							$r(()=>{
+								elements.div("init")
+							})
+							createRoot(()=>{
+								onUpdate(signal, (newVal)=>{
+									if (newVal === 2) {
+										$r(()=>{
+											elements.div("shouldn't show up")
+											ranShouldntShowUp = true
+										})
+									}
+								})
+							})
+						})
+					}
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>init</div>`)
+			signal(1)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			signal(2)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			assert.strictEqual(ranShouldntShowUp, true)
 		})
 	})
 

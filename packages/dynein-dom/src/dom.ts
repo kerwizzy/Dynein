@@ -20,30 +20,29 @@ const updateEventTable: Record<string, string> = {
 	selectedIndex: "input" //<select>
 };
 
-function replacementArea(start: Node, end: Node, setupReplacements: (replaceInner: (inner: () => void) => void) => void) {
+function replacementArea(start: Node, end: Node, setupReplacements: (replaceInner: <T>(inner: () => T) => T) => void) {
 	let isFirst = true;
 
 	let destroyed = false;
 	onCleanup(() => {
 		destroyed = true;
 	});
-	setupReplacements((inner: () => void) => {
-		if (destroyed) {
-			return;
-		}
-		if (!start.parentNode) {
-			throw new Error("Unexpected state");
-		}
-		if (!isFirst) {
-			const range = document.createRange();
-			range.setStartAfter(start);
-			range.setEndBefore(end);
-			range.deleteContents();
+	setupReplacements(<T>(inner: () => T) => {
+		if (!destroyed) {
+			if (!start.parentNode) {
+				throw new Error("Unexpected state");
+			}
+			if (!isFirst) {
+				const range = document.createRange();
+				range.setStartAfter(start);
+				range.setEndBefore(end);
+				range.deleteContents();
+			}
 		}
 
 		isFirst = false;
-		setInsertionState(start.parentNode, end, ()=>{
-			assertStatic(inner)
+		return setInsertionState(start.parentNode, end, destroyed, ()=>{
+			return assertStatic(inner)
 		});
 	});
 }
@@ -92,25 +91,25 @@ type ElementTagNameMapForNamespace = {
 // Internal variables and functions used when building DOM structures
 let insertTarget: Node | null = null;
 let insertBeforeNode: Node | null = null;
-let disableInsert: boolean = false
+let insertDisabled: boolean = false
 
 addStateStasher(()=>{
 	const old_insertTarget = insertTarget
 	const old_insertBeforeNode = insertBeforeNode
-	const old_disableInsert = disableInsert
+	const old_insertDisabled = insertDisabled
 
 	return ()=>{
 		insertTarget = old_insertTarget
 		insertBeforeNode = old_insertBeforeNode
-		disableInsert = old_disableInsert
+		insertDisabled = old_insertDisabled
 		if (insertBeforeNode && !insertBeforeNode?.parentNode) {
-			disableInsert = true
+			insertDisabled = true
 		}
 	}
 })
 
 export function addNode<T extends Node>(node: T): T {
-	if (!disableInsert) {
+	if (!insertDisabled) {
 		if (insertTarget === null) {
 			throw new Error("not rendering");
 		}
@@ -119,20 +118,24 @@ export function addNode<T extends Node>(node: T): T {
 	return node;
 }
 
-export function setInsertionState(
+export function setInsertionState<T>(
 	parentNode: Node | null,
 	beforeNode: Node | null,
-	inner: () => void
+	disableInsert: boolean,
+	inner: () => T
 ) {
-	const oldCurrentNode = insertTarget;
-	const oldEndNode = insertBeforeNode;
+	const old_insertTarget = insertTarget
+	const old_insertBeforeNode = insertBeforeNode
+	const old_insertDisabled = insertDisabled
 	insertTarget = parentNode;
 	insertBeforeNode = beforeNode;
+	insertDisabled = disableInsert
 	try {
-		inner();
+		return inner();
 	} finally {
-		insertTarget = oldCurrentNode;
-		insertBeforeNode = oldEndNode;
+		insertTarget = old_insertTarget
+		insertBeforeNode = old_insertBeforeNode
+		insertDisabled = old_insertDisabled
 	}
 }
 
@@ -216,7 +219,7 @@ function createAndInsertElement<
 	if (inner !== null) {
 		if (typeof inner === "function") {
 			//console.log(`<${tagName}>`)
-			setInsertionState(el, null, () => {
+			setInsertionState(el, null, false, () => {
 				inner(el);
 			});
 			//console.log(`</${tagName}>`)
@@ -301,7 +304,7 @@ export function addHTML(html: string): void {
 }
 export function addText(val: Primitive | (() => Primitive)): Node {
 	const node = document.createTextNode("");
-	setInsertionState(null, null, () => {
+	setInsertionState(null, null, false, () => {
 		if (typeof val === "function") {
 			createEffect(() => {
 				node.textContent = stringify(val());
@@ -338,7 +341,7 @@ export function addPortal(parentNode: Node, beforeOrInner: Node | null | (()=>vo
 	});
 
 	assertStatic(()=>{
-		setInsertionState(parentNode, endNode, inner);
+		setInsertionState(parentNode, endNode, false, inner);
 	})
 }
 
@@ -357,7 +360,7 @@ export function mountBody(inner: () => void) {
 
 export function addAsyncReplaceable(
 	setupReplacements: (
-		replaceInner: (inner: () => void) => void,
+		replaceInner: <T>(inner: () => T) => T,
 		dependent: (inner: () => void) => void
 	) => void
 ) {
@@ -369,9 +372,9 @@ export function addAsyncReplaceable(
 			const owner = new Owner()
 			setupReplacements((inner) => {
 				owner.reset()
-				runWithOwner(owner, ()=>{
-					assertStatic(()=>{
-						$r(inner)
+				return runWithOwner(owner, ()=>{
+					return assertStatic(()=>{
+						return $r(inner)
 					})
 				})
 			}, (inner: () => void)=>{
@@ -395,14 +398,18 @@ export function addDynamic(inner: () => void): void {
 	);
 }
 
-export function addAsync(inner: () => void): void {
+export function addAsync<T>(inner: () => T): T {
+	let out: any
 	replacementArea(
 		addNode(document.createComment("<async-append>")),
 		addNode(document.createComment("</async-append>")),
 		($r)=>{
-			$r(inner)
+			$r(()=>{
+				out = inner()
+			})
 		}
 	)
+	return out!
 }
 
 export function addIf(ifCond: () => any, inner: () => void) {

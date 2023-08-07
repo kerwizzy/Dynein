@@ -176,7 +176,7 @@ class Hyperfor<T> {
 				if (item.state === RenderState.add) {
 					item.indexSignal(index)
 
-					setInsertionState(prevNode.parentNode, prevNode.nextSibling, ()=>{
+					setInsertionState(prevNode.parentNode, prevNode.nextSibling, false, ()=>{
 						item.start = addNode(document.createComment(item!.debugID))
 						runWithOwner(item.owner, ()=>{
 							try {
