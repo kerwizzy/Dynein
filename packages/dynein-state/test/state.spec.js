@@ -1352,6 +1352,27 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "before = 0 inside = 1 after = 0 outside = undefined ")
 		})
 
+		it("restores context values outside of owners", async ()=>{
+			const ctx = createContext(undefined)
+
+			let order = ""
+			await $s(runWithContext(ctx, 0, async ()=>{
+				await $s(sleep(1))
+				order += `before = ${useContext(ctx)} `
+
+				await $s(runWithContext(ctx, 1, async ()=>{
+					await $s(sleep(1))
+					order += `inside = ${useContext(ctx)} `
+					await $s(sleep(1))
+				}))
+				order += `after = ${useContext(ctx)} `
+			}))
+			order += `outside = ${useContext(ctx)} `
+
+			await sleep(50)
+			assert.strictEqual(order, "before = 0 inside = 1 after = 0 outside = undefined ")
+		})
+
 		it("handles rejected promises", async ()=>{
 			const ctx = createContext(undefined)
 			let gotOwner = "NOT RUN"
@@ -1379,6 +1400,42 @@ describe("@dynein/state", () => {
 			await sleep(50)
 			assert.strictEqual(gotOwner, expectedOwner)
 			assert.strictEqual(gotCtx, undefined)
+		})
+	})
+
+	describe("stashState", ()=>{
+		it("doesn't freeze state popping", ()=>{
+			const ctx = createContext()
+
+			let log = ""
+
+			log += useContext(ctx)+" " // undefined
+			runWithContext(ctx, "a", ()=>{
+				log += useContext(ctx)+" " // a
+				runWithContext(ctx, "b", ()=>{
+					log += useContext(ctx)+" " // b
+					runWithContext(ctx, "c", ()=>{
+						log += useContext(ctx)+" " // c
+						stashState()
+						log += useContext(ctx)+" " // c
+					})
+					log += useContext(ctx)+" " // b
+					runWithContext(ctx, "d", ()=>{
+						log += useContext(ctx)+" " // d
+					})
+					log += useContext(ctx)+" " // b
+					stashState()
+					log += useContext(ctx)+" " // b
+					runWithContext(ctx, "e", ()=>{
+						log += useContext(ctx)+" " // e
+					})
+					log += useContext(ctx)+" " // b
+				})
+				log += useContext(ctx)+" " // a
+			})
+			log += useContext(ctx)+" " // undefined
+
+			assert.strictEqual(log, "undefined a b c c b d b b e b a undefined ")
 		})
 	})
 

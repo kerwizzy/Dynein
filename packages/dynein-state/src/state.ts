@@ -117,31 +117,56 @@ export function createContext(defaultValue?: any): Context<any> {
 
 export function runWithContext<T, R>(context: Context<T>, value: T, inner: ()=>R): R {
 	const old_contextValues = contextValues
+
+	let createdNewContext = false
 	if (!contextValues || contextValues.frozen) {
+		createdNewContext = true
 		contextValues = {
 			parent: contextValues,
 			values: new Map(),
 			frozen: false
 		}
 	}
-	const values = contextValues.values
 
-	const old_hasValue = values.has(context)
-	const old_value = values.get(context)
+	const old_hasValue = contextValues!.values.has(context)
+	const old_value = contextValues!.values.get(context)
 
-	values.set(context, value)
+	contextValues!.values.set(context, value)
 	try {
 		return inner()
 	} finally {
-		// It could have been frozen by something inside inner that cached the context.
-		if (!contextValues!.frozen) {
-			if (!old_hasValue) {
-				values.delete(context)
-			} else {
-				values.set(context, old_value)
+		// So we created a new contextValues up above. The only thing remaining in this contextValues
+		// should just be our value. We can just pop back to old_contextValues.
+		//
+		// (Notice we can't just do contextValues !== old_contextValues. We need the createdNewContext
+		//  variable because of the on-pop create context code below.)
+		if (createdNewContext) {
+			contextValues = old_contextValues
+		} else {
+			// If we get here, then we either reused the old contextValues and modified it, or else
+			// the create context on pop code ran somewhere in inner()
+
+			// If the state is frozen, it must have been frozen by a stashAllState call inside.
+			// Just make a clone of it.
+			if (contextValues!.frozen) {
+				contextValues = {
+					parent: contextValues!.parent,
+					values: new Map(contextValues!.values),
+					frozen: false
+				}
 			}
+
+			// If it isn't frozen (or we just un-freezed it by creating a clone), just reset it
+			if (!old_hasValue) {
+				contextValues!.values.delete(context)
+			} else {
+				contextValues!.values.set(context, old_value)
+			}
+
+			// And notice there's no need for a contextValues = old_contextValues here, since
+			// we know it will either be identical to begin with, or we just created a
+			// new contextValues, or the code inside inner did
 		}
-		contextValues = old_contextValues
 	}
 }
 
