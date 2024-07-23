@@ -7,7 +7,7 @@
   "main": "built/hyperfor.js",
   "scripts": {
     "watch": "tsc --watch",
-    "test": "mocha",
+    "test": "mocha --enable-source-maps",
     "build": "rm -rf ./built && tsc",
     "prepare": "npm run build"
   },
