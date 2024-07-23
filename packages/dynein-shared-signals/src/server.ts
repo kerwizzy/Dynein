@@ -6,13 +6,13 @@ import {
 	ServerToClientMessage,
 	Serializable,
 	SharedSignal
-} from "./serialize.js";
+} from "./serialize.js"
 
 import Deque from "double-ended-queue"
 
 interface Client<T> {
-	readonly id: string;
-	metadata: T;
+	readonly id: string
+	metadata: T
 }
 
 enum KeyType {
@@ -22,16 +22,16 @@ enum KeyType {
 }
 
 function getKeyType(key: string): KeyType {
-	const start = key[0];
+	const start = key[0]
 	switch (start) {
 		case "@":
-			return KeyType.named;
+			return KeyType.named
 		case "_":
-			return KeyType.uuid;
+			return KeyType.uuid
 		case "$":
-			return KeyType.object;
+			return KeyType.object
 		default:
-			throw new Error("Unrecognized key prefix");
+			throw new Error("Unrecognized key prefix")
 	}
 }
 
@@ -40,27 +40,27 @@ function stableJSONStringify(obj: any) {
 	return JSON.stringify(obj, (key, value) =>
 		value instanceof Object && !Array.isArray(value)
 			? Object.keys(value)
-					.sort()
-					.reduce((sorted: any, key) => {
-						sorted[key] = value[key];
-						return sorted;
-					}, {})
+				.sort()
+				.reduce((sorted: any, key) => {
+					sorted[key] = value[key]
+					return sorted
+				}, {})
 			: value
-	);
+	)
 }
 
-export class APIError extends Error {}
+export class APIError extends Error { }
 
 interface ServerParams<T> {
-	sendMessage: (clientID: string, msg: ServerToClientMessage) => void;
+	sendMessage: (clientID: string, msg: ServerToClientMessage) => void
 	setupEvents: (
 		onmessage: (clientID: string, msg: ClientToServerMessage) => void,
 		onClientConnect: (clientID: string, metadata: T) => void,
 		onClientDisconnect: (clientID: string) => void
-	) => void;
-	checkCanRead: (clientID: string, portID: string, metadata: T) => Promise<boolean>;
-	checkCanWrite: (clientID: string, portID: string, metadata: T) => Promise<boolean>;
-	rpc: (clientID: string, msg: any, metadata: T) => Promise<any>;
+	) => void
+	checkCanRead: (clientID: string, portID: string, metadata: T) => Promise<boolean>
+	checkCanWrite: (clientID: string, portID: string, metadata: T) => Promise<boolean>
+	rpc: (clientID: string, msg: any, metadata: T) => Promise<any>
 	handleObjectKey: (
 		clientID: string,
 		cmd: "get" | "set" | "update",
@@ -68,17 +68,17 @@ interface ServerParams<T> {
 		value: any,
 		updateOnEqual: boolean,
 		metadata: T
-	) => Promise<any>;
-	uuid: () => string;
+	) => Promise<any>
+	uuid: () => string
 }
 
 export class SharedStateServer<T> extends SharedStateEndpoint {
 	readonly clients: Map<string, Client<T>> = new Map();
 	private subscriptions: Map<string, Set<Client<T>>> = new Map();
-	private specialGetters: Record<string, (client: Client<T>) => any>;
+	private specialGetters: Record<string, (client: Client<T>) => any>
 	debounceInterval = 0;
 	sharedSignalsByKey: Map<string, SharedSignal<any>> = new Map();
-	private params: ServerParams<T>;
+	private params: ServerParams<T>
 
 	private serverHandleMessageAwaits = 0;
 
@@ -87,38 +87,38 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 
 
 	uuid() {
-		return this.params.uuid();
+		return this.params.uuid()
 	}
 
 	constructor(params: ServerParams<T>) {
-		super();
+		super()
 		this.specialGetters = {
 			serverTime: () => {
-				return Date.now();
+				return Date.now()
 			},
 			clients: () => {
-				return new Set(Array.from(this.clients.values()).map((cl) => cl.id));
+				return new Set(Array.from(this.clients.values()).map((cl) => cl.id))
 			},
 			ownClientID: (client) => {
-				return client.id;
+				return client.id
 			}
-		};
+		}
 
-		this.params = params;
+		this.params = params
 		this.params.setupEvents(
 			async (clientID, msg) => {
 				if (!this.clients.has(clientID)) {
-					console.warn("Got message from unknown client");
-					return;
+					console.warn("Got message from unknown client")
+					return
 				}
-				const client = this.clients.get(clientID)!;
+				const client = this.clients.get(clientID)!
 				this.messageQueue.push([client, msg])
-				setTimeout(()=>{
+				setTimeout(() => {
 					this.handleMessageChunks()
 				}, 40)
 			},
 			(clientID, metadata) => {
-				this.clients.set(clientID, { id: clientID, metadata });
+				this.clients.set(clientID, { id: clientID, metadata })
 			},
 			(clientID) => {
 				const client = this.clients.get(clientID)
@@ -126,12 +126,12 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 					console.warn("Unexpected state: delete nonexistent clientID")
 					return
 				}
-				this.clients.delete(clientID);
+				this.clients.delete(clientID)
 				for (const subscribers of this.subscriptions.values()) {
 					subscribers.delete(client)
 				}
 			}
-		);
+		)
 
 		const logStatus = () => {
 			//console.log(`subscriptions: ${this.subscriptions.size} sharedSignalsByKey: ${this.sharedSignalsByKey.size} queued msgs: ${this.messageQueue.length} serverHandleMessageAwaits ${this.serverHandleMessageAwaits}`)
@@ -148,7 +148,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 		this.handlingMessages = true
 		while (this.messageQueue.length > 0) {
 			const msgs: [Client<T>, ClientToServerMessage][] = []
-			for (let i = 0; i<chunkSize; i++) {
+			for (let i = 0; i < chunkSize; i++) {
 				if (this.messageQueue.length === 0) {
 					break
 				}
@@ -162,14 +162,14 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 	protected async tryServerHandleMessage(client: Client<T>, msg: ClientToServerMessage) {
 		this.serverHandleMessageAwaits++
 		try {
-			await this.serverHandleMessage(client, msg);
+			await this.serverHandleMessage(client, msg)
 		} catch (err) {
-			console.log("Got error from handle message: ", err);
+			console.log("Got error from handle message: ", err)
 			this.sendToClient(client, {
 				cmd: "err",
 				causeCmd: msg.cmd,
 				err: "Server error"
-			});
+			})
 		}
 		this.serverHandleMessageAwaits--
 	}
@@ -181,31 +181,31 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 		if (!this.subscriptions.has(msg.key)) {
 			return
 		}
-		const subscriptions = this.subscriptions.get(msg.key)!;
+		const subscriptions = this.subscriptions.get(msg.key)!
 		for (let client of subscriptions) {
 			if (blockSendTo !== client.id) {
 				if (await this.params.checkCanRead(client.id, msg.key, client.metadata)) {
-					this.sendToClient(client, msg);
+					this.sendToClient(client, msg)
 				}
 			}
 		}
 	}
 
 	public async broadcastObjectKeySet(obj: any, value: any) {
-		const key = "$" + stableJSONStringify(obj);
+		const key = "$" + stableJSONStringify(obj)
 		if (!this.subscriptions.has(key)) {
-			return;
+			return
 		}
 		this.broadcastUpdate({
 			cmd: "set",
 			key,
 			updateOnEqual: false,
 			value: this.serialize(value)
-		});
+		})
 	}
 
 	protected async sendToClient(client: Client<T>, msg: ServerToClientMessage) {
-		this.params.sendMessage(client.id, msg);
+		this.params.sendMessage(client.id, msg)
 	}
 
 	protected async serverHandleMessage(client: Client<T>, msg: ClientToServerMessage) {
@@ -214,12 +214,12 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 				{
 					if (await this.params.checkCanWrite(client.id, msg.key, client.metadata)) {
 						if (this.specialGetters[msg.key]) {
-							return;
+							return
 						}
 
-						const keyType = getKeyType(msg.key);
+						const keyType = getKeyType(msg.key)
 						if (!this.subscriptions.has(msg.key)) {
-							this.subscriptions.set(msg.key, new Set());
+							this.subscriptions.set(msg.key, new Set())
 						}
 
 						if (keyType === KeyType.object) {
@@ -231,15 +231,15 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 									this.deserialize(msg.value),
 									msg.updateOnEqual,
 									client.metadata
-								);
-								this.broadcastUpdate(msg, client.id);
+								)
+								this.broadcastUpdate(msg, client.id)
 							} catch (err) {
 								this.sendToClient(client, {
 									cmd: "err",
 									causeCmd: "set",
 									err: err instanceof APIError ? err.message : "Server error"
-								});
-								console.log("got err: ", err);
+								})
+								console.log("got err: ", err)
 							}
 						} else {
 							if (msg.cmd === "set" && !this.getSignalByKey(msg.key)) {
@@ -247,20 +247,20 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 									msg.key,
 									this.deserialize(msg.value),
 									msg.updateOnEqual
-								);
+								)
 							}
-							super.handleMessage(client.id, msg);
+							super.handleMessage(client.id, msg)
 						}
 					} else {
 						this.sendToClient(client, {
 							cmd: "err",
 							causeCmd: "set",
 							err: "Unauthorized"
-						});
-						return;
+						})
+						return
 					}
 				}
-				break;
+				break
 			case "subscribe": {
 				// This is different from a "get" command in that "subscribe" only adds the subscription
 				// instead of also fetching and returning the value. This is useful when
@@ -268,16 +268,16 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 				// once as part of a search query) but still wants to be alerted on updates
 				if (await this.params.checkCanRead(client.id, msg.key, client.metadata)) {
 					if (!this.subscriptions.has(msg.key)) {
-						this.subscriptions.set(msg.key, new Set());
+						this.subscriptions.set(msg.key, new Set())
 					}
-					this.subscriptions.get(msg.key)!.add(client);
+					this.subscriptions.get(msg.key)!.add(client)
 				} else {
 					this.sendToClient(client, {
 						cmd: "err",
 						causeCmd: "subscribe",
 						err: "Unauthorized"
-					});
-					return;
+					})
+					return
 				}
 			} break
 			case "get":
@@ -289,14 +289,14 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 								key: msg.key,
 								value: this.serialize(this.specialGetters[msg.key](client)),
 								updateOnEqual: false
-							});
+							})
 						} else {
-							const keyType = getKeyType(msg.key);
+							const keyType = getKeyType(msg.key)
 
 							if (!this.subscriptions.has(msg.key)) {
-								this.subscriptions.set(msg.key, new Set());
+								this.subscriptions.set(msg.key, new Set())
 							}
-							this.subscriptions.get(msg.key)!.add(client);
+							this.subscriptions.get(msg.key)!.add(client)
 
 							if (keyType === KeyType.object) {
 								try {
@@ -307,7 +307,7 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 										undefined,
 										msg.updateOnEqual,
 										client.metadata
-									);
+									)
 									if (!this.subscriptions.get(msg.key)?.has(client)) {
 										return // unsubscribed in meantime, no need to send got
 									}
@@ -316,20 +316,20 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 										key: msg.key,
 										value: this.serialize(val),
 										updateOnEqual: false
-									});
+									})
 								} catch (err) {
 									this.sendToClient(client, {
 										cmd: "err",
 										causeCmd: "get",
 										err: err instanceof APIError ? err.message : "Server error"
-									});
+									})
 									this.sendToClient(client, {
 										cmd: "got",
 										key: msg.key,
 										value: this.serialize(undefined),
 										updateOnEqual: false
-									});
-									console.log("got err: ", err);
+									})
+									console.log("got err: ", err)
 								}
 							} else {
 								if (this.sharedSignalsByKey.has(msg.key)) {
@@ -341,14 +341,14 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 										),
 										updateOnEqual: this.sharedSignalsByKey.get(msg.key)!
 											.sharedSignalUpdateOnEqual
-									});
+									})
 								} else {
 									this.serverHandleMessage(client, {
 										cmd: "set",
 										key: msg.key,
 										value: msg.init,
 										updateOnEqual: msg.updateOnEqual
-									});
+									})
 								}
 							}
 						}
@@ -357,21 +357,21 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 							cmd: "err",
 							causeCmd: "get",
 							err: "Unauthorized"
-						});
-						return;
+						})
+						return
 					}
 				}
-				break;
+				break
 			case "update":
 				{
 					if (await this.params.checkCanWrite(client.id, msg.key, client.metadata)) {
 						if (this.specialGetters[msg.key]) {
-							return;
+							return
 						}
 
-						const keyType = getKeyType(msg.key);
+						const keyType = getKeyType(msg.key)
 						if (!this.subscriptions.has(msg.key)) {
-							throw new Error("Unexpected state");
+							throw new Error("Unexpected state")
 						}
 
 						if (keyType === KeyType.object) {
@@ -383,48 +383,48 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 									msg,
 									true,
 									client.metadata
-								);
-								this.broadcastUpdate(msg, client.id);
+								)
+								this.broadcastUpdate(msg, client.id)
 							} catch (err) {
 								if (err instanceof APIError) {
 									this.sendToClient(client, {
 										cmd: "err",
 										causeCmd: "update",
 										err: err.message
-									});
+									})
 								}
-								console.log("got err: ", err);
+								console.log("got err: ", err)
 							}
 						} else {
-							super.handleMessage(client.id, msg);
+							super.handleMessage(client.id, msg)
 						}
 					} else {
 						this.sendToClient(client, {
 							cmd: "err",
 							causeCmd: "update",
 							err: "Unauthorized"
-						});
-						return;
+						})
+						return
 					}
 				}
-				break;
+				break
 			case "unsubscribe":
 				{
-					const keyType = getKeyType(msg.key);
+					const keyType = getKeyType(msg.key)
 					if (!this.subscriptions.has(msg.key)) {
-						throw new Error("Unexpected state");
+						throw new Error("Unexpected state")
 					}
-					const subscriptionSet = this.subscriptions.get(msg.key)!;
-					subscriptionSet.delete(client);
+					const subscriptionSet = this.subscriptions.get(msg.key)!
+					subscriptionSet.delete(client)
 					if (keyType === KeyType.uuid || keyType === KeyType.object) {
 						if (subscriptionSet.size === 0) {
 							//TODO: maybe there could be a race condition here if one last client leaves and then another now client requests at about the same time?
-							this.sharedSignalsByKey.delete(msg.key);
-							this.subscriptions.delete(msg.key);
+							this.sharedSignalsByKey.delete(msg.key)
+							this.subscriptions.delete(msg.key)
 						}
 					}
 				}
-				break;
+				break
 			case "rpc":
 				{
 					try {
@@ -432,33 +432,33 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 							client.id,
 							this.deserialize(msg.arg),
 							client.metadata
-						);
+						)
 						this.sendToClient(client, {
 							cmd: "rpcOK",
 							id: msg.id,
 							res: this.serialize(val)
-						});
+						})
 					} catch (err) {
 						if (!(err instanceof APIError)) {
-							console.warn("Error serving RPC: ", err);
+							console.warn("Error serving RPC: ", err)
 						}
-						const outMsg = err instanceof APIError ? err.message : "Server error";
-						this.sendToClient(client, { cmd: "rpcErr", id: msg.id, err: outMsg });
+						const outMsg = err instanceof APIError ? err.message : "Server error"
+						this.sendToClient(client, { cmd: "rpcErr", id: msg.id, err: outMsg })
 					}
 				}
-				break;
+				break
 			default: {
-				const nev: never = msg;
-				throw new Error("Unrecognized command: " + nev);
+				const nev: never = msg
+				throw new Error("Unrecognized command: " + nev)
 			}
 		}
 	}
 
 	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
-		return this.sharedSignalsByKey.get(key);
+		return this.sharedSignalsByKey.get(key)
 	}
 	protected setSignalByKey(key: string, signal: SharedSignal<any>) {
-		this.sharedSignalsByKey.set(key, signal);
+		this.sharedSignalsByKey.set(key, signal)
 	}
 
 	protected protectFromGC(signal: SharedSignal<any>) {
@@ -470,6 +470,6 @@ export class SharedStateServer<T> extends SharedStateEndpoint {
 	}
 
 	public getObjectSignal<T>(obj: any, init: T, updateOnEqual = false) {
-		return this._makeOrGetSignal("$" + stableJSONStringify(obj), init, updateOnEqual).signal;
+		return this._makeOrGetSignal("$" + stableJSONStringify(obj), init, updateOnEqual).signal
 	}
 }

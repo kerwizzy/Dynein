@@ -3,17 +3,17 @@ import WatchedValue from "./WatchedValue.js"
 
 
 export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
-	readonly value: Signal<Map<K, V>>;
+	readonly value: Signal<Map<K, V>>
 	readonly editEvent: Signal<[key: K, value: V | undefined, add: boolean] | null> // event for *any* call. Not necessarily one that actually changes the map.
 
-	constructor(iterable?: Iterable<readonly [K,V]> | null | undefined | Signal<Map<K,V>>) {
-		super();
+	constructor(iterable?: Iterable<readonly [K, V]> | null | undefined | Signal<Map<K, V>>) {
+		super()
 
-		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? new Map<K,V>(iterable as any) : new Map(), true)
+		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? new Map<K, V>(iterable as any) : new Map(), true)
 
 		this.editEvent = createSignal(null, true)
 
-		this.value = toSignal(()=>baseSignal(), (value: Map<K, V>) => {
+		this.value = toSignal(() => baseSignal(), (value: Map<K, V>) => {
 			if (value !== sample(baseSignal)) {
 				// used in Hyperfor to detect an overwrite of the entire map. Hyperfor can't just
 				// listen on set.value() because that gets fired for every .set and .delete
@@ -34,32 +34,32 @@ export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
 	}
 
 	set(key: K, value: V) {
-		const out = this.v.set(key, value);
+		const out = this.v.set(key, value)
 		this.editEvent([key, value, true])
-		this.fire();
-		return out;
+		this.fire()
+		return out
 	}
 
 	has(key: K) {
-		return this.value().has(key);
+		return this.value().has(key)
 	}
 
 	delete(key: K) {
-		const out = this.v.delete(key);
+		const out = this.v.delete(key)
 		this.editEvent([key, undefined, false])
-		this.fire();
-		return out;
+		this.fire()
+		return out
 	}
 
 	clear() {
-		const out = this.v.clear();
+		const out = this.v.clear()
 		this.editEvent(null)
-		this.fire();
-		return out;
+		this.fire()
+		return out
 	}
 
 	entries() {
-		return this.value().entries();
+		return this.value().entries()
 	}
 
 	keys() {

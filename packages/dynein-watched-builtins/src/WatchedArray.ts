@@ -10,7 +10,7 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 
 		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? Array.from(iterable as Iterable<T>) : [], true)
 
-		this.value = toSignal(()=>baseSignal(), (value: T[]) => {
+		this.value = toSignal(() => baseSignal(), (value: T[]) => {
 			if (value !== sample(baseSignal)) {
 				// used in Hyperfor to detect an overwrite of the entire array. Hyperfor can't just
 				// listen on array.value() because that gets fired for every .splice
@@ -63,7 +63,7 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 		return this.value().length
 	}
 	entries() {
-		return this.value().entries();
+		return this.value().entries()
 	}
 
 	keys() {
@@ -94,22 +94,22 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 	}
 
 	push(...items: T[]) {
-		this.splice(this.v.length, 0, ...items);
-		return this.v.length;
+		this.splice(this.v.length, 0, ...items)
+		return this.v.length
 	}
 
 	unshift(...items: T[]) {
-		this.splice(0, 0, ...items);
-		return this.v.length;
+		this.splice(0, 0, ...items)
+		return this.v.length
 	}
 
 	pop(): T | undefined {
-		const removed = this.splice(this.v.length-1, 1);
+		const removed = this.splice(this.v.length - 1, 1)
 		return removed[0]
 	}
 
 	shift(): T | undefined {
-		const removed = this.splice(0, 1);
+		const removed = this.splice(0, 1)
 		return removed[0]
 	}
 

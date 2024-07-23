@@ -1,13 +1,13 @@
-const isSignalSymbol = Symbol("isSignal");
+const isSignalSymbol = Symbol("isSignal")
 
 // Internal state variables
-let assertedStatic = false;
-let collectingDependencies = false;
+let assertedStatic = false
+let collectingDependencies = false
 
 let currentOwner:
 	| Owner
 	| null /* root on purpose */
-	| undefined /* root probably not on purpose, so create a warning */ = undefined;
+	| undefined /* root probably not on purpose, so create a warning */ = undefined
 
 type ContextStore = {
 	parent: ContextStore | null
@@ -24,21 +24,21 @@ function updateState<T>(
 	new_contextValues: ContextStore | null,
 	inner: () => T
 ) {
-	const old_assertedStatic = assertedStatic;
-	const old_collectingDependencies = collectingDependencies;
-	const old_currentOwner = currentOwner;
+	const old_assertedStatic = assertedStatic
+	const old_collectingDependencies = collectingDependencies
+	const old_currentOwner = currentOwner
 	const old_contextValues = contextValues
 
-	assertedStatic = new_assertedStatic;
-	collectingDependencies = new_collectingDependencies;
-	currentOwner = new_currentOwner;
+	assertedStatic = new_assertedStatic
+	collectingDependencies = new_collectingDependencies
+	currentOwner = new_currentOwner
 	contextValues = new_contextValues
 	try {
-		return inner();
+		return inner()
 	} finally {
-		assertedStatic = old_assertedStatic;
-		collectingDependencies = old_collectingDependencies;
-		currentOwner = old_currentOwner;
+		assertedStatic = old_assertedStatic
+		collectingDependencies = old_collectingDependencies
+		currentOwner = old_currentOwner
 		contextValues = old_contextValues
 	}
 }
@@ -48,20 +48,20 @@ export function _getInternalState() {
 }
 
 export function untrack<T>(inner: () => T): T {
-	return updateState(false, false, currentOwner, contextValues, inner);
+	return updateState(false, false, currentOwner, contextValues, inner)
 }
 export function retrack<T>(inner: () => T): T {
-	return updateState(assertedStatic, true, currentOwner, contextValues, inner);
+	return updateState(assertedStatic, true, currentOwner, contextValues, inner)
 }
 
-const sample = untrack;
-export { sample };
+const sample = untrack
+export { sample }
 
 export function assertStatic<T>(inner: () => T): T {
-	return updateState(true, false, currentOwner, contextValues, inner);
+	return updateState(true, false, currentOwner, contextValues, inner)
 }
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
-	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, owner?.contextValues ?? null, inner);
+	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, owner?.contextValues ?? null, inner)
 }
 
 // Returns a "restore point" that can be used with runWithOwner to restore the current effect,
@@ -69,7 +69,7 @@ export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T)
 export function getOwner(): Owner | null | undefined {
 	if (!currentOwner) {
 		if (!contextValues) {
-			return currentOwner;
+			return currentOwner
 		} else {
 			return new Owner(null)
 		}
@@ -96,12 +96,12 @@ export function getOwner(): Owner | null | undefined {
 		return new Owner(currentOwner)
 	}
 }
-export function createRoot<T>(inner: (dispose: ()=>void)=>T): T {
+export function createRoot<T>(inner: (dispose: () => void) => T): T {
 	// The outer updateState is to set collectingDependencies, assertedStatic, and contextValues before
 	// creating owner.
-	return updateState(false, false, null, null, ()=>{
+	return updateState(false, false, null, null, () => {
 		const owner = new Owner(null)
-		return runWithOwner(owner, ()=>inner(()=>owner.destroy()))
+		return runWithOwner(owner, () => inner(() => owner.destroy()))
 	})
 }
 
@@ -112,10 +112,10 @@ export type Context<T> = {
 export function createContext<T>(): Context<T | undefined>
 export function createContext<T>(defaultValue: T): Context<T>
 export function createContext(defaultValue?: any): Context<any> {
-	return {defaultValue}
+	return { defaultValue }
 }
 
-export function runWithContext<T, R>(context: Context<T>, value: T, inner: ()=>R): R {
+export function runWithContext<T, R>(context: Context<T>, value: T, inner: () => R): R {
 	const old_contextValues = contextValues
 
 	let createdNewContext = false
@@ -170,13 +170,13 @@ export function runWithContext<T, R>(context: Context<T>, value: T, inner: ()=>R
 	}
 }
 
-export function saveContexts(contexts: Context<any>[]): <T>(inner: ()=>T) => T {
-	let restoreContexts = <T>(inner: ()=>T)=>inner()
+export function saveContexts(contexts: Context<any>[]): <T>(inner: () => T) => T {
+	let restoreContexts = <T>(inner: () => T) => inner()
 
 	for (const ctx of contexts) {
 		const innerRestoreContexts = restoreContexts
 		const val = useContext(ctx)
-		restoreContexts = (inner)=>runWithContext(ctx, val, ()=>innerRestoreContexts(inner))
+		restoreContexts = (inner) => runWithContext(ctx, val, () => innerRestoreContexts(inner))
 	}
 
 	return restoreContexts
@@ -195,8 +195,8 @@ export function useContext<T>(context: Context<T>): T {
 }
 
 export interface Destructable {
-	destroy(): void;
-	parent: Owner | null;
+	destroy(): void
+	parent: Owner | null
 }
 
 // Any owners created as root (i.e., with `parent` null or undefined)
@@ -236,9 +236,9 @@ export class Owner implements Destructable {
 		}
 
 		if (!parent) {
-			rootOwners.add(this);
+			rootOwners.add(this)
 		} else {
-			parent.addChild(this);
+			parent.addChild(this)
 		}
 	}
 
@@ -247,10 +247,10 @@ export class Owner implements Destructable {
 		if (this.isDestroyed) {
 			///*DEBUG*/console.log(this.createContext, this.destroyContext)
 			///*DEBUG*/throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
-			throw new Error("Can't add to destroyed context.");
+			throw new Error("Can't add to destroyed context.")
 		}
-		thing.parent = this;
-		this.children.add(thing);
+		thing.parent = this
+		this.children.add(thing)
 	}
 
 	destroy() {
@@ -258,12 +258,12 @@ export class Owner implements Destructable {
 		///*DEBUG*/console.log(`Owner@${this.debugID}: destroy`);
 
 		//@ts-ignore
-		this.isDestroyed = true;
+		this.isDestroyed = true
 		if (this.parent) {
-			this.parent.children.delete(this);
-			this.parent = null;
+			this.parent.children.delete(this)
+			this.parent = null
 		}
-		this.reset();
+		this.reset()
 	}
 
 	reset() {
@@ -275,33 +275,33 @@ export class Owner implements Destructable {
 		this.children = new Set()
 
 		for (const child of children) {
-			child.parent = null;
-			child.destroy();
+			child.parent = null
+			child.destroy()
 		}
 	}
 }
 
-export type Signal<T> = (() => T) & (<U extends T>(newVal: U) => U) & {[isSignalSymbol]: true}
-export type ReadableSignal<T> = (() => T) & {[isSignalSymbol]: true}
+export type Signal<T> = (() => T) & (<U extends T>(newVal: U) => U) & { [isSignalSymbol]: true }
+export type ReadableSignal<T> = (() => T) & { [isSignalSymbol]: true }
 
 const onWriteListenersSymbol = Symbol("onWriteListeners")
 const onWriteOwnersSymbol = Symbol("onWriteOwners")
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
 		if (arguments.length === 0) {
-			return getter();
+			return getter()
 		} else {
 			if (arguments.length !== 1) {
 				throw new Error(
 					"Expected exactly 0 or 1 arguments to a signal read/write function, got " +
-						arguments.length
-				);
+					arguments.length
+				)
 			}
-			setter(newVal!);
+			setter(newVal!)
 			//@ts-ignore
 			if (signalWrapper[onWriteListenersSymbol] && signalWrapper[onWriteListenersSymbol].size > 0) {
-				runWithBaseStateButKeepUpdateQueue(()=>{
-					batch(()=>{
+				runWithBaseStateButKeepUpdateQueue(() => {
+					batch(() => {
 						//@ts-ignore
 						for (const owner of signalWrapper[onWriteOwnersSymbol]) {
 							owner.reset()
@@ -317,16 +317,16 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 					})
 				})
 			}
-			return newVal!;
+			return newVal!
 		}
-	} as Signal<T>;
+	} as Signal<T>
 	//@ts-ignore
-	signalWrapper[isSignalSymbol] = true;
+	signalWrapper[isSignalSymbol] = true
 
 	// TODO: should we set signalWrapper[onWriteListenersSymbol] and onWriteOwnersSymbol to null here to reduce polymorphism?
 
 	//@ts-ignore
-	return signalWrapper;
+	return signalWrapper
 }
 
 export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) => void): void {
@@ -339,8 +339,8 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 	}
 
 	const owner = new Owner()
-	const wrappedListener = (val: T)=>{
-		updateState(false, false, owner, owner.contextValues, ()=>{
+	const wrappedListener = (val: T) => {
+		updateState(false, false, owner, owner.contextValues, () => {
 			listener(val)
 		})
 	}
@@ -349,7 +349,7 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 	getter[onWriteListenersSymbol].add(wrappedListener)
 	//@ts-ignore
 	getter[onWriteOwnersSymbol].add(owner)
-	onCleanup(()=>{
+	onCleanup(() => {
 		//@ts-ignore
 		getter[onWriteListenersSymbol].delete(wrappedListener)
 		//@ts-ignore
@@ -358,240 +358,242 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 }
 
 export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal<T> {
-	const handler = new DependencyHandler(init);
+	const handler = new DependencyHandler(init)
 	const signal = toSignal(
 		() => handler.read(),
 		(val) => handler.write(val, fireWhenEqual)
-	);
+	)
 	// the above makes GC of `handler` depend on GC of `signal`
 
 	// This makes GC of `signal` depends on GC of `handler`, so now
 	// GC of signal and handler are linked. (This is important for @dynein/shared-signals)
-	handler.dependents.add(signal);
+	handler.dependents.add(signal)
 
-	return signal;
+	return signal
 }
 
 export function isSignal(thing: any): thing is Signal<any> {
-	return thing && thing[isSignalSymbol] === true;
+	return thing && thing[isSignalSymbol] === true
 }
 
 export function createEffect(fn: () => (void | Promise<void>)): Destructable {
-	return new Effect(fn);
+	return new Effect(fn)
 }
 
 export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Destructable {
-	let isFirst = true;
+	let isFirst = true
 	return createEffect(() => {
-		const newValue = signal();
+		const newValue = signal()
 		if (!isFirst) {
 			untrack(() => {
-				listener(newValue);
-			});
+				listener(newValue)
+			})
 		}
-		isFirst = false;
-	});
+		isFirst = false
+	})
 }
 
 export function createMemo<T>(fn: () => T, fireWhenEqual: boolean = false): () => T {
-	const internalSignal = createSignal<T>(undefined as unknown as T, fireWhenEqual);
+	const internalSignal = createSignal<T>(undefined as unknown as T, fireWhenEqual)
 	createEffect(() => {
-		internalSignal(fn());
-	});
-	return () => internalSignal();
+		internalSignal(fn())
+	})
+	return () => internalSignal()
 }
 
 export function onCleanup(fn: () => void) {
 	if (currentOwner === undefined) {
 		console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 	}
-	currentOwner?.addChild({ destroy: ()=>{
-		try {
-			runWithOwner(undefined, fn)
-		} catch (err) {
-			console.warn("Caught error in cleanup function:",err)
-		}
-	}, parent: null });
+	currentOwner?.addChild({
+		destroy: () => {
+			try {
+				runWithOwner(undefined, fn)
+			} catch (err) {
+				console.warn("Caught error in cleanup function:", err)
+			}
+		}, parent: null
+	})
 }
 
 export function batch(fn: () => void) {
-	currentUpdateQueue.delayStart(fn);
+	currentUpdateQueue.delayStart(fn)
 }
 
-export function schedule(fn: ()=>void) {
-	currentUpdateQueue.schedule(()=>{
+export function schedule(fn: () => void) {
+	currentUpdateQueue.schedule(() => {
 		runWithBaseStateButKeepUpdateQueue(fn)
 	})
 }
 
-export function onBatchEnd(fn: ()=>void) {
+export function onBatchEnd(fn: () => void) {
 	currentUpdateQueue.onTickEnd.add(fn)
 	currentUpdateQueue.start()
 }
 
 export function subclock(fn: () => void) {
-	currentUpdateQueue.subclock(fn);
+	currentUpdateQueue.subclock(fn)
 }
 
 // Necessary since console isn't part of the default Typescript defs, and we don't want to include
 // either DOM or @types/node as deps of this module.
 interface Console {
-	error(...data: any[]): void;
-	log(...data: any[]): void;
-	warn(...data: any[]): void;
-	trace(...data: any[]): void;
+	error(...data: any[]): void
+	log(...data: any[]): void
+	warn(...data: any[]): void
+	trace(...data: any[]): void
 }
 
-declare var console: Console;
+declare var console: Console
 
 // Internal class to keep track of pending updates
 class UpdateQueue {
-	parent: UpdateQueue | null;
-	thisTick: Set<() => void>;
-	nextTick: Set<() => void>;
-	onTickEnd: Set<() => void>;
-	ticking: boolean;
-	startDelayed: boolean;
+	parent: UpdateQueue | null
+	thisTick: Set<() => void>
+	nextTick: Set<() => void>
+	onTickEnd: Set<() => void>
+	ticking: boolean
+	startDelayed: boolean
 
 	constructor(parent: UpdateQueue | null = null) {
-		this.parent = parent;
-		this.thisTick = new Set();
-		this.nextTick = new Set();
-		this.onTickEnd = new Set();
-		this.ticking = false;
-		this.startDelayed = false;
+		this.parent = parent
+		this.thisTick = new Set()
+		this.nextTick = new Set()
+		this.onTickEnd = new Set()
+		this.ticking = false
+		this.startDelayed = false
 	}
 
 	start() {
 		if (this.ticking || this.startDelayed) {
-			return;
+			return
 		}
 
-		let subTickN = 0;
-		this.ticking = true;
+		let subTickN = 0
+		this.ticking = true
 		while (true) {
 			if (subTickN > 10000) {
-				console.warn("Runaway update detected");
-				break;
+				console.warn("Runaway update detected")
+				break
 			}
 
-			subTickN++;
+			subTickN++
 
-			const tmp = this.thisTick;
-			this.thisTick = this.nextTick;
-			this.nextTick = tmp;
-			this.nextTick.clear();
+			const tmp = this.thisTick
+			this.thisTick = this.nextTick
+			this.nextTick = tmp
+			this.nextTick.clear()
 
 			if (this.thisTick.size === 0) {
 				if (this.onTickEnd.size === 0) {
 					break
 				}
-				runWithBaseStateButKeepUpdateQueue(()=>{
+				runWithBaseStateButKeepUpdateQueue(() => {
 					for (const fn of this.onTickEnd) {
 						this.onTickEnd.delete(fn)
 						try {
 							fn()
 						} catch (err) {
-							console.warn("Caught error in onBatchEnd function:", err);
+							console.warn("Caught error in onBatchEnd function:", err)
 						}
 					}
 				})
-				continue; // the onTickEnd functions might have added more stuff to nextTick
+				continue // the onTickEnd functions might have added more stuff to nextTick
 			}
 
 			for (const fn of this.thisTick) {
-				this.thisTick.delete(fn);
+				this.thisTick.delete(fn)
 				try {
-					fn();
+					fn()
 				} catch (err) {
-					console.warn("Caught error in tick function:", err);
+					console.warn("Caught error in tick function:", err)
 				}
 			}
 		}
-		this.ticking = false;
+		this.ticking = false
 	}
 
 	subclock(fn: () => void) {
-		const oldUpdateQueue = currentUpdateQueue;
-		currentUpdateQueue = new UpdateQueue(this);
+		const oldUpdateQueue = currentUpdateQueue
+		currentUpdateQueue = new UpdateQueue(this)
 		try {
-			fn();
+			fn()
 		} finally {
-			currentUpdateQueue = oldUpdateQueue;
+			currentUpdateQueue = oldUpdateQueue
 		}
 	}
 
 	delayStart(fn: () => void) {
-		const oldStartDelayed = this.startDelayed;
-		this.startDelayed = true;
+		const oldStartDelayed = this.startDelayed
+		this.startDelayed = true
 		try {
-			fn();
+			fn()
 		} finally {
-			this.startDelayed = oldStartDelayed;
-			this.start();
+			this.startDelayed = oldStartDelayed
+			this.start()
 		}
 	}
 
 	unschedule(fn: any) {
-		this.thisTick.delete(fn);
-		this.nextTick.delete(fn);
-		this.parent?.unschedule(fn);
+		this.thisTick.delete(fn)
+		this.nextTick.delete(fn)
+		this.parent?.unschedule(fn)
 	}
 
 	schedule(fn: () => void) {
 		if (this.ticking && this.thisTick.has(fn)) {
 			// if this is already scheduled on the current tick but not started yet, don't schedule it
 			// again on the next tick
-			return;
+			return
 		}
 
-		this.parent?.unschedule(fn);
-		this.nextTick.add(fn);
-		this.start();
+		this.parent?.unschedule(fn)
+		this.nextTick.add(fn)
+		this.start()
 	}
 }
 
-let currentUpdateQueue = new UpdateQueue();
+let currentUpdateQueue = new UpdateQueue()
 
 // Internal class created by createEffect. Collects dependencies of `fn` and rexecutes `fn` when
 // dependencies update.
 class Effect extends Owner {
-	private readonly fn: () => (void | Promise<void>);
-	readonly sources: Set<DependencyHandler<any>>;
-	private readonly boundExec: () => void;
+	private readonly fn: () => (void | Promise<void>)
+	readonly sources: Set<DependencyHandler<any>>
+	private readonly boundExec: () => void
 	private executing: boolean = false;
 	private destroyPending: boolean = false;
 	private asyncExec: boolean = false
 	private schedulePending: boolean = false
 
 	constructor(fn: () => (void | Promise<void>)) {
-		super();
+		super()
 		//@ts-ignore
 		this.assertedStatic = false
 		//@ts-ignore
 		this.collectingDependencies = true
-		this.fn = fn.bind(undefined);
-		this.sources = new Set();
-		this.boundExec = this.exec.bind(this);
-		currentUpdateQueue.delayStart(this.boundExec);
+		this.fn = fn.bind(undefined)
+		this.sources = new Set()
+		this.boundExec = this.exec.bind(this)
+		currentUpdateQueue.delayStart(this.boundExec)
 	}
 
 	private exec() {
 		if (this.isDestroyed) {
-			return;
+			return
 		}
 
 		this.reset() // Necessary to make the "effect created inside an exec-pending effect" test pass
 		for (const src of this.sources) {
-			src.drains.delete(this);
+			src.drains.delete(this)
 		}
-		this.sources.clear();
+		this.sources.clear()
 		try {
-			this.executing = true;
-			const maybePromise = updateState(false, true, this, this.contextValues, this.fn);
+			this.executing = true
+			const maybePromise = updateState(false, true, this, this.contextValues, this.fn)
 			this.asyncExec = maybePromise instanceof Promise
 			if (this.asyncExec) {
-				(maybePromise as any).finally(()=>{
+				(maybePromise as any).finally(() => {
 					this.finishExec()
 				})
 			}
@@ -603,97 +605,97 @@ class Effect extends Owner {
 	}
 
 	private finishExec() {
-		this.executing = false;
+		this.executing = false
 		if (this.destroyPending) {
-			this.destroy();
+			this.destroy()
 		} else if (this.schedulePending) {
 			this.schedulePending = false
-			currentUpdateQueue.schedule(this.boundExec);
+			currentUpdateQueue.schedule(this.boundExec)
 		}
 	}
 
 	destroy() {
 		if (this.executing) {
 			this.reset()
-			this.destroyPending = true;
+			this.destroyPending = true
 		} else {
-			super.destroy();
+			super.destroy()
 		}
 	}
 
 	schedule() {
-		this.reset(); // Destroy subwatchers
+		this.reset() // Destroy subwatchers
 		if (this.asyncExec && this.executing) {
 			this.schedulePending = true
 		} else {
-			currentUpdateQueue.schedule(this.boundExec);
+			currentUpdateQueue.schedule(this.boundExec)
 		}
 	}
 }
 
 function findParentEffect(c: Owner | null | undefined): Effect | null | undefined {
-	return c && (c instanceof Effect ? c : findParentEffect(c.parent));
+	return c && (c instanceof Effect ? c : findParentEffect(c.parent))
 }
 
 class DependencyHandler<T> {
-	value: T;
-	drains: Set<Effect>;
+	value: T
+	drains: Set<Effect>
 
 	dependents: Set<any> = new Set(); //for GC stuff
 
 	constructor(value: T) {
 		this.value = value
-		this.drains = new Set();
+		this.drains = new Set()
 	}
 
 	read(): T {
-		const currentComputation = findParentEffect(currentOwner);
+		const currentComputation = findParentEffect(currentOwner)
 		if (collectingDependencies && currentComputation) {
-			currentComputation.sources.add(this);
-			this.drains.add(currentComputation);
+			currentComputation.sources.add(this)
+			this.drains.add(currentComputation)
 		} else if (assertedStatic) {
-			console.error("Looks like you might have wanted to add a dependency but didn't.");
+			console.error("Looks like you might have wanted to add a dependency but didn't.")
 		}
-		return this.value;
+		return this.value
 	}
 
 	write(val: T, updateOnEqual: boolean) {
 		currentUpdateQueue.delayStart(() => {
-			const changedValue = this.value !== val;
-			this.value = val;
+			const changedValue = this.value !== val
+			this.value = val
 
 			if (updateOnEqual || changedValue) {
 				for (const drain of this.drains) {
-					drain.schedule();
+					drain.schedule()
 				}
 			}
-		});
+		})
 	}
 }
 
-type StateStasher = ()=>(()=>void)
+type StateStasher = () => (() => void)
 
 const stateStashers = new Set<StateStasher>()
-const stashAllState: StateStasher = ()=>{
-	const restorers: (()=>void)[] = []
+const stashAllState: StateStasher = () => {
+	const restorers: (() => void)[] = []
 	for (const getRestorer of stateStashers) {
 		restorers.push(getRestorer())
 	}
-	return ()=>{
+	return () => {
 		for (const restorer of restorers) {
 			restorer()
 		}
 	}
 }
 
-let basicRestoreBaseState = ()=>{}
-const restoreBaseState = ()=>{
+let basicRestoreBaseState = () => { }
+const restoreBaseState = () => {
 	basicRestoreBaseState()
 	currentUpdateQueue.start()
 }
 
 const rootUpdateQueue = currentUpdateQueue
-export function runWithBaseState<T>(inner: ()=>T): T {
+export function runWithBaseState<T>(inner: () => T): T {
 	const old_rootUpdateQueue_startDelayed = rootUpdateQueue.startDelayed
 	const restore = stashAllState()
 	try {
@@ -705,9 +707,9 @@ export function runWithBaseState<T>(inner: ()=>T): T {
 	}
 }
 
-function runWithBaseStateButKeepUpdateQueue(inner: ()=>void) {
+function runWithBaseStateButKeepUpdateQueue(inner: () => void) {
 	const old_currentUpdateQueue = currentUpdateQueue
-	runWithBaseState(()=>{
+	runWithBaseState(() => {
 		currentUpdateQueue = old_currentUpdateQueue
 		inner()
 	})
@@ -718,10 +720,10 @@ export function addStateStasher(stasher: StateStasher) {
 	basicRestoreBaseState = stashAllState()
 }
 
-addStateStasher(()=>{
-	const old_assertedStatic = assertedStatic;
-	const old_collectingDependencies = collectingDependencies;
-	const old_currentOwner = currentOwner;
+addStateStasher(() => {
+	const old_assertedStatic = assertedStatic
+	const old_collectingDependencies = collectingDependencies
+	const old_currentOwner = currentOwner
 	const old_contextValues = contextValues
 	if (contextValues) {
 		contextValues.frozen = true
@@ -730,7 +732,7 @@ addStateStasher(()=>{
 	const old_currentUpdateQueue = currentUpdateQueue
 	const old_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
 
-	return ()=>{
+	return () => {
 		assertedStatic = old_assertedStatic
 		collectingDependencies = old_collectingDependencies
 		currentOwner = old_currentOwner
@@ -742,7 +744,7 @@ addStateStasher(()=>{
 
 export function $s<T>(promise: Promise<T>): Promise<T> {
 	const restore = stashAllState()
-	promise.finally(()=>{
+	promise.finally(() => {
 		///*DEBUG*/console.log("$s restore saved state")
 		restore()
 
@@ -751,17 +753,17 @@ export function $s<T>(promise: Promise<T>): Promise<T> {
 		// See: https://stackoverflow.com/a/57325561
 
 		//@ts-ignore
-		queueMicrotask(()=>{
+		queueMicrotask(() => {
 			///*DEBUG*/console.log("restore base state")
 			restoreBaseState()
 		})
-	}).catch(()=>{})
+	}).catch(() => { })
 	return promise
 }
 
-export function stashState(): <T>(inner: ()=>T)=>T {
+export function stashState(): <T>(inner: () => T) => T {
 	const restoreStashed = stashAllState()
-	return (inner)=>{
+	return (inner) => {
 		const restore = stashAllState()
 		try {
 			restoreStashed()

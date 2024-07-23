@@ -1,58 +1,58 @@
 import * as D from "@dynein/state"
 
-type Primitive = null | undefined | boolean | string | number | bigint;
+type Primitive = null | undefined | boolean | string | number | bigint
 
 export type SerializedSet<T> = {
-	type: "set";
-	values: Serialize<T>[];
-};
+	type: "set"
+	values: Serialize<T>[]
+}
 
 export type SerializedMap<K, V> = {
-	type: "map";
-	entries: [Serialize<K>, Serialize<V>][];
-};
+	type: "map"
+	entries: [Serialize<K>, Serialize<V>][]
+}
 export type SerializedRecord<V> = {
-	type: "obj";
-	obj: Record<string, Serialize<V>>;
-};
+	type: "obj"
+	obj: Record<string, Serialize<V>>
+}
 
 export type SerializedSharedSignal<T> = {
-	type: "sharedSignal";
-	key: string;
-	init: Serialize<T>;
-	updateOnEqual: boolean;
-};
+	type: "sharedSignal"
+	key: string
+	init: Serialize<T>
+	updateOnEqual: boolean
+}
 
 export type SerializedSharedArray = {
-	type: "sharedArr";
-	key: string;
+	type: "sharedArr"
+	key: string
 	value: SerializedSharedSignal<any>
-};
+}
 export type SerializedSharedSet = {
-	type: "sharedSet";
-	key: string;
+	type: "sharedSet"
+	key: string
 	value: SerializedSharedSignal<any>
-};
+}
 export type SerializedSharedMap = {
-	type: "sharedMap";
-	key: string;
+	type: "sharedMap"
+	key: string
 	value: SerializedSharedSignal<any>
-};
+}
 
 export type SerializedCustomValue = {
-	type: "custom";
-	name: string;
-	value: any;
-};
+	type: "custom"
+	name: string
+	value: any
+}
 
 export type SerializedDate = {
-	type: "date";
-	value: number;
-};
+	type: "date"
+	value: number
+}
 
-export type SerializedArray<T> = Serialize<T>[];
+export type SerializedArray<T> = Serialize<T>[]
 
-export type StringRecord<V> = Record<string, V>;
+export type StringRecord<V> = Record<string, V>
 
 export type Serialize<T> = T extends Primitive
 	? T
@@ -74,7 +74,7 @@ export type Serialize<T> = T extends Primitive
 	? SerializedSharedSet
 	: T extends SharedMap<infer K, infer V>
 	? SerializedSharedMap
-	: never;
+	: never
 
 export type Serializable =
 	| Primitive
@@ -86,75 +86,75 @@ export type Serializable =
 	| SharedSignal<any>
 	| SharedArray<Serializable>
 	| SharedSet<UniqueSerializable>
-	| SharedMap<UniqueSerializable, Serializable>;
-export type UniqueSerializable = Primitive | SharedSignal<Serializable>;
-export type SerializedValue = Serialize<Serializable> | SerializedCustomValue;
+	| SharedMap<UniqueSerializable, Serializable>
+export type UniqueSerializable = Primitive | SharedSignal<Serializable>
+export type SerializedValue = Serialize<Serializable> | SerializedCustomValue
 
 export function isSharedSignal(thing: any): thing is SharedSignal<any> {
-	return thing && thing[sharedSignalSymbol] === true;
+	return thing && thing[sharedSignalSymbol] === true
 }
 
 export type GetMessage = {
-	cmd: "get";
-	key: string;
-	init: SerializedValue;
-	updateOnEqual: boolean;
-};
+	cmd: "get"
+	key: string
+	init: SerializedValue
+	updateOnEqual: boolean
+}
 
 export type GotMessage = {
-	cmd: "got";
-	key: string;
-	value: SerializedValue;
-	updateOnEqual: boolean;
-};
+	cmd: "got"
+	key: string
+	value: SerializedValue
+	updateOnEqual: boolean
+}
 
 export type SetMessage = {
-	cmd: "set";
-	key: string;
-	value: SerializedValue;
-	updateOnEqual: boolean;
-};
+	cmd: "set"
+	key: string
+	value: SerializedValue
+	updateOnEqual: boolean
+}
 
 export type UpdateMessage = {
-	cmd: "update";
-	key: string;
-	method: string;
-	args: SerializedArray<any>;
-};
+	cmd: "update"
+	key: string
+	method: string
+	args: SerializedArray<any>
+}
 
 export type UnsubscribeMessage = {
-	cmd: "unsubscribe";
-	key: string;
-};
+	cmd: "unsubscribe"
+	key: string
+}
 
 export type SubscribeMessage = {
-	cmd: "subscribe";
-	key: string;
-};
+	cmd: "subscribe"
+	key: string
+}
 
 export type ErrorMessage = {
-	cmd: "err";
-	causeCmd: ClientToServerMessage["cmd"];
-	err: string;
-};
+	cmd: "err"
+	causeCmd: ClientToServerMessage["cmd"]
+	err: string
+}
 
 export type RPCMessage = {
-	cmd: "rpc";
-	id: number;
-	arg: SerializedValue;
-};
+	cmd: "rpc"
+	id: number
+	arg: SerializedValue
+}
 
 export type RPCResponseMessage = {
-	cmd: "rpcOK";
-	id: number;
-	res: SerializedValue;
-};
+	cmd: "rpcOK"
+	id: number
+	res: SerializedValue
+}
 
 export type RPCErrorMessage = {
-	cmd: "rpcErr";
-	id: number;
-	err: string;
-};
+	cmd: "rpcErr"
+	id: number
+	err: string
+}
 
 export type ClientToServerMessage =
 	| GetMessage
@@ -170,23 +170,23 @@ export type ServerToClientMessage =
 	| ErrorMessage
 	| RPCResponseMessage
 	| RPCErrorMessage
-export type ServerOrClientMessage = SetMessage | GotMessage | UpdateMessage;
+export type ServerOrClientMessage = SetMessage | GotMessage | UpdateMessage
 
-const sharedSignalSymbol = Symbol("isSharedSignal");
-const localSignalSymbol = Symbol("setLocal");
-const updateFromRemoteSymbol = Symbol("updateSymbol");
+const sharedSignalSymbol = Symbol("isSharedSignal")
+const localSignalSymbol = Symbol("setLocal")
+const updateFromRemoteSymbol = Symbol("updateSymbol")
 export interface SharedSignal<T> extends D.Signal<T> {
-	readonly synced: () => boolean;
+	readonly synced: () => boolean
 	readonly syncedPromise: Promise<void>
-	readonly key: string;
-	[localSignalSymbol]: (val: T) => void;
-	[sharedSignalSymbol]: true;
-	[updateFromRemoteSymbol]: (from: string, val: T, isSetCmd: boolean) => void;
-	readonly sharedSignalUpdateOnEqual: boolean;
+	readonly key: string
+	[localSignalSymbol]: (val: T) => void
+	[sharedSignalSymbol]: true
+	[updateFromRemoteSymbol]: (from: string, val: T, isSetCmd: boolean) => void
+	readonly sharedSignalUpdateOnEqual: boolean
 }
 
-export function throttleDebounce(time: number, fn: () => void, throttle: boolean=true): () => void {
-	let lastCall = 0;
+export function throttleDebounce(time: number, fn: () => void, throttle: boolean = true): () => void {
+	let lastCall = 0
 	let seq = 0
 	return () => {
 		seq++
@@ -195,35 +195,35 @@ export function throttleDebounce(time: number, fn: () => void, throttle: boolean
 
 		if (throttle && lastCall + time < Date.now()) {
 			//console.log("throttle call")
-			fn(); //throttle
-			lastCall = Date.now();
+			fn() //throttle
+			lastCall = Date.now()
 		} else {
 			setTimeout(() => {
 				if (seq === ownSeq) { //no tries since try that triggered this timeout
-					fn(); //debounce
-					lastCall = Date.now();
+					fn() //debounce
+					lastCall = Date.now()
 				}
-			}, time);
+			}, time)
 		}
-	};
+	}
 }
 
 interface CustomSerializer<T> {
-	name: string;
-	predicate: (thing: any) => thing is T;
-	serialize(thing: T, serialize: (value: any) => any): any;
-	deserialize(serialized: any, deserialize: (value: any) => any): T;
+	name: string
+	predicate: (thing: any) => thing is T
+	serialize(thing: T, serialize: (value: any) => any): any
+	deserialize(serialized: any, deserialize: (value: any) => any): T
 }
 
 function assertUnreachable(x: never): never {
-	throw new Error("Unexpected state");
+	throw new Error("Unexpected state")
 }
 
-type SpliceListener<T> = (start: number, deleteCount: number, added: T[], removed: T[])=>void
+type SpliceListener<T> = (start: number, deleteCount: number, added: T[], removed: T[]) => void
 
 export abstract class SharedStateEndpoint {
-	abstract uuid(): string;
-	abstract debounceInterval: number;
+	abstract uuid(): string
+	abstract debounceInterval: number
 
 	protected customSerializers: Map<(thing: any) => boolean, CustomSerializer<any>> = new Map();
 	protected customDeserializers: Map<string, CustomSerializer<any>> = new Map();
@@ -241,43 +241,43 @@ export abstract class SharedStateEndpoint {
 			case "set":
 			case "update":
 			case "got":
-				const currentSignal = this.getSignalByKey(msg.key);
+				const currentSignal = this.getSignalByKey(msg.key)
 				if (!currentSignal) {
 					if (msg.cmd === "got") {
 						return //ignore, probably GC'd
 					}
-					console.warn("Got `"+msg.cmd+"` to unknown signal: "+msg.key);
-					return;
+					console.warn("Got `" + msg.cmd + "` to unknown signal: " + msg.key)
+					return
 				}
 
 				D.batch(() => {
 					if (msg.cmd === "set" || msg.cmd === "got") {
-						const deserialized = this.deserialize(msg.value);
-						currentSignal[updateFromRemoteSymbol](from, deserialized, msg.cmd === "set");
+						const deserialized = this.deserialize(msg.value)
+						currentSignal[updateFromRemoteSymbol](from, deserialized, msg.cmd === "set")
 					} else if (msg.cmd === "update") {
-						const target = D.sample(currentSignal);
-						const args = this.deserialize(msg.args);
+						const target = D.sample(currentSignal)
+						const args = this.deserialize(msg.args)
 						if (msg.method === "splice") {
-							const removed = target.splice(...args);
+							const removed = target.splice(...args)
 							this.onSplice(currentSignal, args[0], args[1], args.slice(2), removed)
 						} else if (msg.method === "add") {
-							target.add(...msg.args);
+							target.add(...msg.args)
 						} else if (msg.method === "set") {
-							target.set(...msg.args);
+							target.set(...msg.args)
 						} else if (msg.method === "delete") {
-							target.delete(...msg.args);
+							target.delete(...msg.args)
 						} else {
-							throw new Error("Unrecognized method");
+							throw new Error("Unrecognized method")
 						}
-						currentSignal[localSignalSymbol](target);
-						this.broadcastUpdate(msg, from); //echo same update message to other clients if on server, do nothing if on client because of blockSendTo
+						currentSignal[localSignalSymbol](target)
+						this.broadcastUpdate(msg, from) //echo same update message to other clients if on server, do nothing if on client because of blockSendTo
 					} else {
-						throw new Error("Unexpected state");
+						throw new Error("Unexpected state")
 					}
-				});
-				break;
+				})
+				break
 			default:
-				assertUnreachable(msg);
+				assertUnreachable(msg)
 		}
 	}
 
@@ -310,14 +310,14 @@ export abstract class SharedStateEndpoint {
 	protected abstract broadcastUpdate(
 		msg: SetMessage | UpdateMessage,
 		blockSendTo?: string | undefined
-	): void;
+	): void
 
 	addCustomSerializer<T>(serializer: CustomSerializer<T>) {
 		if (this.customDeserializers.has(serializer.name)) {
-			throw new Error("Custom serializer name collision");
+			throw new Error("Custom serializer name collision")
 		}
-		this.customSerializers.set(serializer.predicate, serializer);
-		this.customDeserializers.set(serializer.name, serializer);
+		this.customSerializers.set(serializer.predicate, serializer)
+		this.customDeserializers.set(serializer.name, serializer)
 	}
 
 	serialize<T>(value: T): Serialize<T> {
@@ -334,25 +334,25 @@ export abstract class SharedStateEndpoint {
 			return {
 				type: "date",
 				value: value.getTime()
-			} as Serialize<Date> as any;
+			} as Serialize<Date> as any
 		} else if (Array.isArray(value)) {
-			return value.map((v) => this.serialize(v)) as Serialize<any[]> as any;
+			return value.map((v) => this.serialize(v)) as Serialize<any[]> as any
 		} else if (
 			typeof value === "object" &&
 			(Object.getPrototypeOf(value) === Object.prototype ||
 				Object.getPrototypeOf(value) === null)
 		) {
-			const out = Object.create(null);
+			const out = Object.create(null)
 			for (let key in value) {
 				//@ts-ignore
-				out[key] = this.serialize(value[key]);
+				out[key] = this.serialize(value[key])
 			}
-			return { type: "obj", obj: out } as any;
+			return { type: "obj", obj: out } as any
 		} else if (value instanceof Set) {
 			return {
 				type: "set",
 				values: Array.from(value.values()).map((v) => this.serialize(v))
-			} as Serialize<Set<any>> as any;
+			} as Serialize<Set<any>> as any
 		} else if (value instanceof Map) {
 			return {
 				type: "map",
@@ -360,26 +360,26 @@ export abstract class SharedStateEndpoint {
 					this.serialize(k),
 					this.serialize(v)
 				])
-			} as Serialize<Map<any, any>> as any;
+			} as Serialize<Map<any, any>> as any
 		} else if (isSharedSignal(value)) {
 			return {
 				type: "sharedSignal",
 				key: value.key,
 				init: this.serialize(D.sample(value)),
 				updateOnEqual: value.sharedSignalUpdateOnEqual
-			} as Serialize<SharedSignal<any>> as any;
+			} as Serialize<SharedSignal<any>> as any
 		} else if (value instanceof SharedArray) {
-			return { type: "sharedArr", key: value.value.key, value:this.serialize(value.value) } as Serialize<
+			return { type: "sharedArr", key: value.value.key, value: this.serialize(value.value) } as Serialize<
 				SharedArray<any>
-			> as any;
+			> as any
 		} else if (value instanceof SharedSet) {
-			return { type: "sharedSet", key: value.value.key, value:this.serialize(value.value) } as Serialize<
+			return { type: "sharedSet", key: value.value.key, value: this.serialize(value.value) } as Serialize<
 				SharedSet<any>
-			> as any;
+			> as any
 		} else if (value instanceof SharedMap) {
-			return { type: "sharedMap", key: value.value.key, value:this.serialize(value.value) } as Serialize<
+			return { type: "sharedMap", key: value.value.key, value: this.serialize(value.value) } as Serialize<
 				SharedMap<any, any>
-			> as any;
+			> as any
 		} else {
 			for (let [pred, serializer] of this.customSerializers) {
 				if (pred(value)) {
@@ -387,11 +387,11 @@ export abstract class SharedStateEndpoint {
 						type: "custom",
 						name: serializer.name,
 						value: serializer.serialize(value, this.serialize.bind(this))
-					} as any;
+					} as any
 				}
 			}
-			console.log("val = ", value);
-			throw new Error("Can't serialize");
+			console.log("val = ", value)
+			throw new Error("Can't serialize")
 		}
 	}
 
@@ -404,32 +404,32 @@ export abstract class SharedStateEndpoint {
 			typeof value === "string" ||
 			typeof value === "bigint"
 		) {
-			return value;
+			return value
 		} else if (Array.isArray(value)) {
-			return (value as SerializedArray<any>).map((v) => this.deserialize(v));
+			return (value as SerializedArray<any>).map((v) => this.deserialize(v))
 		} else if (value.type === "date") {
-			return new Date(value.value);
+			return new Date(value.value)
 		} else if (value.type === "map") {
-			const out = new Map();
+			const out = new Map()
 			for (let [k, v] of (value as SerializedMap<any, any>).entries) {
-				out.set(this.deserialize(k), this.deserialize(v));
+				out.set(this.deserialize(k), this.deserialize(v))
 			}
-			return out;
+			return out
 		} else if (value.type === "set") {
-			const out = new Set();
+			const out = new Set()
 			for (let entry of (value as SerializedSet<any>).values) {
-				out.add(this.deserialize(entry));
+				out.add(this.deserialize(entry))
 			}
-			return out;
+			return out
 		} else if (value.type === "obj") {
-			const out = Object.create(null);
+			const out = Object.create(null)
 			for (let key in (value as SerializedRecord<any>).obj) {
 				//@ts-ignore
-				out[key] = this.deserialize(value.obj[key]);
+				out[key] = this.deserialize(value.obj[key])
 			}
-			return out;
+			return out
 		} else if (value.type === "sharedSignal") {
-			return this._makeOrGetSignal(value.key, this.deserialize(value.init), value.updateOnEqual).signal;
+			return this._makeOrGetSignal(value.key, this.deserialize(value.init), value.updateOnEqual).signal
 		} else if (value.type === "sharedArr") {
 			return new SharedArray(this, this.deserialize(value.value))
 		} else if (value.type === "sharedSet") {
@@ -438,18 +438,18 @@ export abstract class SharedStateEndpoint {
 			return new SharedMap(this, this.deserialize(value.value))
 		} else if (value.type === "custom") {
 			if (this.customDeserializers.has(value.name)) {
-				const serializer = this.customDeserializers.get(value.name)!;
-				return serializer.deserialize(value.value, this.deserialize.bind(this));
+				const serializer = this.customDeserializers.get(value.name)!
+				return serializer.deserialize(value.value, this.deserialize.bind(this))
 			}
-			throw new Error("Missing deserializer for custom type " + value.name);
+			throw new Error("Missing deserializer for custom type " + value.name)
 		} else {
-			console.log("can't deserialize",value)
-			throw new Error("Can't deserialize.");
+			console.log("can't deserialize", value)
+			throw new Error("Can't deserialize.")
 		}
 	}
 
-	protected abstract getSignalByKey(key: string): SharedSignal<any> | undefined;
-	protected abstract setSignalByKey(key: string, value: SharedSignal<any>): void;
+	protected abstract getSignalByKey(key: string): SharedSignal<any> | undefined
+	protected abstract setSignalByKey(key: string, value: SharedSignal<any>): void
 	protected abstract protectFromGC(value: SharedSignal<any>): void
 	protected abstract unprotectFromGC(value: SharedSignal<any>): void
 
@@ -458,15 +458,15 @@ export abstract class SharedStateEndpoint {
 		init: T,
 		updateOnEqual: boolean
 	): { cached: boolean; signal: SharedSignal<T> } {
-		const currentSignal = this.getSignalByKey(key);
+		const currentSignal = this.getSignalByKey(key)
 		if (currentSignal) {
-			return { cached: true, signal: currentSignal };
+			return { cached: true, signal: currentSignal }
 		}
 
-		let value = D.createSignal(init, updateOnEqual);
+		let value = D.createSignal(init, updateOnEqual)
 
 		let updateRemoteUndebounced = () => {
-			const toSend = D.sample(value) as any;
+			const toSend = D.sample(value) as any
 
 			this.broadcastUpdate(
 				{
@@ -476,35 +476,35 @@ export abstract class SharedStateEndpoint {
 					updateOnEqual,
 				},
 				lastUpdateFrom
-			);
-		};
+			)
+		}
 		let updateRemote =
 			this.debounceInterval > 0
 				? throttleDebounce(this.debounceInterval, updateRemoteUndebounced)
-				: updateRemoteUndebounced;
+				: updateRemoteUndebounced
 
-		let lastUpdateFrom: string | undefined = undefined;
+		let lastUpdateFrom: string | undefined = undefined
 		let hasBeenSet = false // only true when has been updated using a `set` not merely a `got`
 
 		const signal = D.toSignal(
 			() => value(),
 			(newVal) => {
-				value(newVal);
+				value(newVal)
 
 				hasBeenSet = true
-				lastUpdateFrom = undefined;
-				updateRemote();
+				lastUpdateFrom = undefined
+				updateRemote()
 			}
-		) as SharedSignal<T>;
+		) as SharedSignal<T>
 
 		//@ts-ignore
-		value.__sharedSignal = signal; // make GC of signal depend on GC of value.
+		value.__sharedSignal = signal // make GC of signal depend on GC of value.
 
-		let onSynced: ()=>void
+		let onSynced: () => void
 		const syncedPromise = new Promise<SharedSignal<T>>((resolve) => {
-			onSynced = ()=>{
+			onSynced = () => {
 				this.unprotectFromGC(signal)
-				synced(true);
+				synced(true)
 				resolve(signal) // resolve with signal so syncedPromise refs signal and signal won't get GC'd if syncedPromise is used
 			}
 		})
@@ -514,41 +514,41 @@ export abstract class SharedStateEndpoint {
 
 			if (!hasBeenSet || isSetCmd) {
 				hasBeenSet ||= isSetCmd
-				lastUpdateFrom = from;
-				value(newVal);
+				lastUpdateFrom = from
+				value(newVal)
 				updateRemote()
 			}
-		};
+		}
 
 		//@ts-ignore
-		signal.key = key;
+		signal.key = key
 
-		signal[localSignalSymbol] = value;
-		signal[sharedSignalSymbol] = true;
+		signal[localSignalSymbol] = value
+		signal[sharedSignalSymbol] = true
 
 		//@ts-ignore
-		signal.sharedSignalUpdateOnEqual = updateOnEqual;
+		signal.sharedSignalUpdateOnEqual = updateOnEqual
 
-		const synced = D.createSignal(false);
+		const synced = D.createSignal(false)
 		Object.defineProperty(signal, "synced", {
-			get:() => {
+			get: () => {
 				this.protectFromGC(signal) // protect until synced
 				return () => {
-					return synced();
-				};
+					return synced()
+				}
 			}
 		})
 
 		Object.defineProperty(signal, "syncedPromise", {
-			get:() => {
+			get: () => {
 				this.protectFromGC(signal) // protect until synced
 				return syncedPromise
 			}
 		})
 
-		this.setSignalByKey(key, signal);
+		this.setSignalByKey(key, signal)
 
-		return { cached: false, signal };
+		return { cached: false, signal }
 	}
 
 	signal<T>(
@@ -556,30 +556,30 @@ export abstract class SharedStateEndpoint {
 		key?: string,
 		updateOnEqual: boolean = false
 	): SharedSignal<T> {
-		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return this._makeOrGetSignal(key, init, updateOnEqual).signal;
+		key = key !== undefined ? "@" + key : "_" + this.uuid()
+		return this._makeOrGetSignal(key, init, updateOnEqual).signal
 	}
 
 	customSignal<T>(init: T, key?: string, updateOnEqual: boolean = false): SharedSignal<T> {
-		key = key !== undefined ? "@" + key : "_" + this.uuid();
-		return this._makeOrGetSignal(key, init, updateOnEqual).signal;
+		key = key !== undefined ? "@" + key : "_" + this.uuid()
+		return this._makeOrGetSignal(key, init, updateOnEqual).signal
 	}
 
 	sharedArray<T>(init: SharedSignal<T[]> | Iterable<T> = [], key?: string): SharedArray<T> {
-		key = key !== undefined ? "@" + key : "_" + this.uuid();
+		key = key !== undefined ? "@" + key : "_" + this.uuid()
 		if (isSharedSignal(init)) {
 			return new SharedArray(this, init)
 		} else {
-			return new SharedArray(this, this._makeOrGetSignal(key, Array.from(init as Iterable<T>), true).signal);
+			return new SharedArray(this, this._makeOrGetSignal(key, Array.from(init as Iterable<T>), true).signal)
 		}
 	}
 
 	sharedSet<T extends UniqueSerializable>(init: SharedSignal<Set<T>> | Iterable<T>, key?: string): SharedSet<T> {
-		key = key !== undefined ? "@" + key : "_" + this.uuid();
+		key = key !== undefined ? "@" + key : "_" + this.uuid()
 		if (isSharedSignal(init)) {
 			return new SharedSet(this, init)
 		} else {
-			return new SharedSet(this, this._makeOrGetSignal(key, new Set(init as Iterable<T>), true).signal);
+			return new SharedSet(this, this._makeOrGetSignal(key, new Set(init as Iterable<T>), true).signal)
 		}
 	}
 
@@ -587,39 +587,39 @@ export abstract class SharedStateEndpoint {
 		init: SharedSignal<Map<K, V>> | [K, V][] = [],
 		key?: string
 	): SharedMap<K, V> {
-		key = key !== undefined ? "@" + key : "_" + this.uuid();
+		key = key !== undefined ? "@" + key : "_" + this.uuid()
 		if (isSharedSignal(init)) {
 			return new SharedMap(this, init)
 		} else {
-			return new SharedMap(this, this._makeOrGetSignal(key, new Map(init as [K, V][]), true).signal);
+			return new SharedMap(this, this._makeOrGetSignal(key, new Map(init as [K, V][]), true).signal)
 		}
 	}
 }
 
 class SharedArray<T> {
-	private readonly parent: SharedStateEndpoint;
-	readonly value: SharedSignal<T[]>;
+	private readonly parent: SharedStateEndpoint
+	readonly value: SharedSignal<T[]>
 
 	private get v() {
-		return D.sample(this.value);
+		return D.sample(this.value)
 	}
 
 	constructor(parent: SharedStateEndpoint, value: SharedSignal<T[]>) {
-		this.parent = parent;
+		this.parent = parent
 		this.value = value
 	}
 
 	includes(searchElement: T, fromIndex?: number | undefined): boolean {
-		return this.value().includes(searchElement, fromIndex);
+		return this.value().includes(searchElement, fromIndex)
 	}
 	indexOf(searchElement: T, fromIndex?: number | undefined): number {
-		return this.value().indexOf(searchElement, fromIndex);
+		return this.value().indexOf(searchElement, fromIndex)
 	}
 	lastIndexOf(searchElement: T, fromIndex?: number | undefined): number {
-		return this.value().lastIndexOf(searchElement, fromIndex);
+		return this.value().lastIndexOf(searchElement, fromIndex)
 	}
 	map<U>(callbackfn: (value: T, index: number, array: T[]) => U, thisArg?: any): U[] {
-		return this.value().map(callbackfn, thisArg);
+		return this.value().map(callbackfn, thisArg)
 	}
 
 	// See above for why these are fundamentally methods on the SharedStateEndpoint not on SharedArray
@@ -632,8 +632,8 @@ class SharedArray<T> {
 	}
 
 	splice(start: number, deleteCount: number, ...items: T[]) {
-		const removed = this.v.splice(start, deleteCount, ...items);
-		this.value[localSignalSymbol](this.v);
+		const removed = this.v.splice(start, deleteCount, ...items)
+		this.value[localSignalSymbol](this.v)
 		//@ts-ignore
 		this.parent.onSplice(this.value, start, deleteCount, items, removed)
 
@@ -643,87 +643,87 @@ class SharedArray<T> {
 			method: "splice",
 			key: this.value.key,
 			args: this.parent.serialize([start, deleteCount, ...items])
-		});
-		return removed;
+		})
+		return removed
 	}
 
 	push(...items: T[]) {
-		this.splice(this.v.length, 0, ...items);
-		return this.v.length;
+		this.splice(this.v.length, 0, ...items)
+		return this.v.length
 	}
 
 	unshift(...items: T[]) {
-		this.splice(0, 0, ...items);
-		return this.v.length;
+		this.splice(0, 0, ...items)
+		return this.v.length
 	}
 
 	get length() {
-		return this.value().length;
+		return this.value().length
 	}
 
 	[Symbol.iterator]() {
-		return this.value()[Symbol.iterator]();
+		return this.value()[Symbol.iterator]()
 	}
 }
 
 class SharedMap<K extends UniqueSerializable, V> {
-	private readonly parent: SharedStateEndpoint;
-	readonly value: SharedSignal<Map<K, V>>;
+	private readonly parent: SharedStateEndpoint
+	readonly value: SharedSignal<Map<K, V>>
 
 	constructor(parent: SharedStateEndpoint, value: SharedSignal<Map<K, V>>) {
-		this.parent = parent;
+		this.parent = parent
 		this.value = value
 	}
 
 	private get v() {
-		return D.sample(this.value);
+		return D.sample(this.value)
 	}
 
 	get(key: K): V | undefined {
-		return this.value().get(key);
+		return this.value().get(key)
 	}
 
 	set(key: K, value: V) {
-		D.sample(this.value).set(key, value);
-		this.value[localSignalSymbol](this.v);
+		D.sample(this.value).set(key, value)
+		this.value[localSignalSymbol](this.v)
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "set",
 			key: this.value.key,
 			args: this.parent.serialize([key, value])
-		});
-		return this;
+		})
+		return this
 	}
 
 	has(key: K) {
-		return this.value().has(key); //TODO: should maybe restructure this class so this only fires when key actually is added or removed
+		return this.value().has(key) //TODO: should maybe restructure this class so this only fires when key actually is added or removed
 	}
 
 	delete(key: K) {
-		D.sample(this.value).delete(key);
-		this.value[localSignalSymbol](this.v);
+		D.sample(this.value).delete(key)
+		this.value[localSignalSymbol](this.v)
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "delete",
 			key: this.value.key,
 			args: this.parent.serialize([key])
-		});
+		})
 	}
 
 	entries() {
-		return this.value().entries();
+		return this.value().entries()
 	}
 
 	[Symbol.iterator]() {
-		return this.entries();
+		return this.entries()
 	}
 }
 
 class SharedSet<T extends UniqueSerializable> {
-	private readonly parent: SharedStateEndpoint;
-	readonly value: SharedSignal<Set<T>>;
+	private readonly parent: SharedStateEndpoint
+	readonly value: SharedSignal<Set<T>>
 
 	constructor(parent: SharedStateEndpoint, value: SharedSignal<Set<T>>) {
 		this.parent = parent
@@ -731,55 +731,55 @@ class SharedSet<T extends UniqueSerializable> {
 	}
 
 	private get v() {
-		return D.sample(this.value);
+		return D.sample(this.value)
 	}
 
 	add(entry: T) {
 		if (this.has(entry)) {
-			return;
+			return
 		}
-		D.sample(this.value).add(entry);
-		this.value[localSignalSymbol](this.v);
+		D.sample(this.value).add(entry)
+		this.value[localSignalSymbol](this.v)
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "add",
 			key: this.value.key,
 			args: this.parent.serialize([entry])
-		});
-		return this;
+		})
+		return this
 	}
 
 	has(entry: T) {
-		return this.value().has(entry); //TODO: should maybe restructure this class so this only fires when key actually is added or removed
+		return this.value().has(entry) //TODO: should maybe restructure this class so this only fires when key actually is added or removed
 	}
 
 	delete(entry: T) {
 		if (!this.has(entry)) {
-			return;
+			return
 		}
-		D.sample(this.value).delete(entry);
-		this.value[localSignalSymbol](this.v);
+		D.sample(this.value).delete(entry)
+		this.value[localSignalSymbol](this.v)
 		//@ts-ignore
 		this.parent.broadcastUpdate({
 			cmd: "update",
 			method: "delete",
 			key: this.value.key,
 			args: this.parent.serialize([entry])
-		});
+		})
 	}
 
 	values() {
-		return this.value().values();
+		return this.value().values()
 	}
 
 	[Symbol.iterator]() {
-		return this.values();
+		return this.values()
 	}
 
 	get size() {
-		return this.value().size;
+		return this.value().size
 	}
 }
 
-export type { SharedArray, SharedSet, SharedMap };
+export type { SharedArray, SharedSet, SharedMap }

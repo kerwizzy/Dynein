@@ -3,7 +3,7 @@ import { Signal, createSignal, sample, batch, onUpdate, createEffect, Owner, run
 
 type ReactiveArrayItem<T> = {
 	value: T,
-	index: ()=>number
+	index: () => number
 	owner?: Owner
 }
 
@@ -12,17 +12,17 @@ type ReactiveArrayItem<T> = {
 /**
  * Return min <= i <= max such that !pred(i - 1) && pred(i).
  */
-function binarySearch(min: number, max: number, pred: (val: number)=>boolean) {
-    let lo = min-1, hi = max;
-    while (1 + lo < hi) {
-        const mi = lo + ((hi - lo) >> 1);
-        if (pred(mi)) {
-            hi = mi;
-        } else {
-            lo = mi;
-        }
-    }
-    return hi;
+function binarySearch(min: number, max: number, pred: (val: number) => boolean) {
+	let lo = min - 1, hi = max
+	while (1 + lo < hi) {
+		const mi = lo + ((hi - lo) >> 1)
+		if (pred(mi)) {
+			hi = mi
+		} else {
+			lo = mi
+		}
+	}
+	return hi
 }
 
 export class MappableReactiveArray<T> {
@@ -31,12 +31,12 @@ export class MappableReactiveArray<T> {
 	protected readonly rawArray: ReactiveArrayItem<T>[]
 
 	constructor(items: T[]) {
-		this.array = new WatchedArray(items.map((value, i) => ({value, index: createSignal(i)})))
+		this.array = new WatchedArray(items.map((value, i) => ({ value, index: createSignal(i) })))
 
 		this.rawArray = sample(this.array.value)
 	}
 
-	map<U>(fn: (item: T, index: ()=>number) => U, equalityChecker?: (oldValue: U | undefined, newValue: U)=>boolean): MappableReactiveArray<U> {
+	map<U>(fn: (item: T, index: () => number) => U, equalityChecker?: (oldValue: U | undefined, newValue: U) => boolean): MappableReactiveArray<U> {
 		const mapped = new MappableReactiveArray<U>([])
 
 		const outerOwner = getOwner()
@@ -49,12 +49,12 @@ export class MappableReactiveArray<T> {
 			let oldMappedValue: U
 
 			const owner = new Owner(outerOwner)
-			runWithOwner(owner, ()=>{
-				createEffect(()=>{
+			runWithOwner(owner, () => {
+				createEffect(() => {
 					const mappedValue = fn(baseValue, baseIndexSignal)
 					const firstRun = !mappedItem
 
-					mappedItem = {value: mappedValue, index: baseIndexSignal, owner}
+					mappedItem = { value: mappedValue, index: baseIndexSignal, owner }
 
 					if (!firstRun) {
 						if (equalityChecker ? !equalityChecker(oldMappedValue, mappedValue) : oldMappedValue !== mappedValue) {
@@ -71,7 +71,7 @@ export class MappableReactiveArray<T> {
 
 		mapped.array.value(this.rawArray.map(mapItem))
 
-		onWrite(this.array.spliceEvent, (evt)=>{
+		onWrite(this.array.spliceEvent, (evt) => {
 			if (!evt) {
 				return
 			}
@@ -87,8 +87,8 @@ export class MappableReactiveArray<T> {
 		return mapped
 	}
 
-	filter(fn: (item: T, index: ()=>number) => boolean): MappableReactiveArray<T> {
-		const intermediate = this.map<{keep: boolean, value: T, filteredItem?: ReactiveArrayItem<T>}>((item, index) => ({keep: fn(item, index), value: item}), (o, n) => o?.keep === n.keep)
+	filter(fn: (item: T, index: () => number) => boolean): MappableReactiveArray<T> {
+		const intermediate = this.map<{ keep: boolean, value: T, filteredItem?: ReactiveArrayItem<T> }>((item, index) => ({ keep: fn(item, index), value: item }), (o, n) => o?.keep === n.keep)
 
 		const filtered = new ReactiveArray<T>([])
 		for (const item of intermediate) {
@@ -106,7 +106,7 @@ export class MappableReactiveArray<T> {
 			const [startIndexInIntermediate, intermediateAdded, intermediateRemoved] = evt
 
 			// count how many of the removed intermediate items were actually in the filtered list at all
-			const totalFilteredRemoved = intermediateRemoved.reduce((acc,val) => val.value.keep ? acc+1 : acc, 0)
+			const totalFilteredRemoved = intermediateRemoved.reduce((acc, val) => val.value.keep ? acc + 1 : acc, 0)
 
 			const firstRemovedInFiltered = intermediateRemoved.find(item => item.value.keep)
 
@@ -130,14 +130,14 @@ export class MappableReactiveArray<T> {
 
 				// iterate backwards because the items in startIndexInIntermediate after startIndexInIntermediate
 				// will be the *new* intermediate items, and it's a bit less confusing to go backwards.
-				let i = startIndexInIntermediate-1
-				for (; i>=0; i--) {
+				let i = startIndexInIntermediate - 1
+				for (; i >= 0; i--) {
 					const intermediateItem = arr[i]
 					if (intermediateItem.value.keep) {
 						if (!intermediateItem.value.filteredItem) {
 							throw new Error("Unexpected state")
 						}
-						startIndexInFiltered = intermediateItem.value.filteredItem.index()+1
+						startIndexInFiltered = intermediateItem.value.filteredItem.index() + 1
 						break
 					}
 				}
@@ -148,7 +148,7 @@ export class MappableReactiveArray<T> {
 			const filteredToAdd = intermediateAdded.filter(item => item.value.keep)
 			const [filteredAdded] = filtered.splice(startIndexInFiltered, totalFilteredRemoved, ...filteredToAdd.map(item => item.value.value))
 
-			for (let i = 0; i<filteredToAdd.length; i++ ){
+			for (let i = 0; i < filteredToAdd.length; i++) {
 				filteredToAdd[i].value.filteredItem = filteredAdded[i]
 			}
 		})
@@ -168,29 +168,29 @@ export class MappableReactiveArray<T> {
 
 		const sortedArr = sample(sorted.array.value)
 
-		assertStatic(()=>{
+		assertStatic(() => {
 			sortedArr.sort((aItem, bItem) => cmp(aItem.value, bItem.value))
 		})
 
-		for (let i = 0; i<sortedArr.length; i++) {
+		for (let i = 0; i < sortedArr.length; i++) {
 			//@ts-ignore
 			sortedArr[i].index(i)
 		}
 
-		onWrite(this.array.spliceEvent, (evt)=>{
+		onWrite(this.array.spliceEvent, (evt) => {
 			if (!evt) {
 				return
 			}
 
 			const [start, thisAdded, thisRemoved] = evt
 
-			for (let i = start; i<start+thisRemoved.length; i++) {
+			for (let i = start; i < start + thisRemoved.length; i++) {
 				const sortedIndex = thisToSorted[i].index()
 				sorted.splice(sortedIndex, 1)
 			}
 
 			const sortedAdded: ReactiveArrayItem<T>[] = []
-			assertStatic(()=>{
+			assertStatic(() => {
 				for (const item of thisAdded) {
 					const thisValue = item.value
 					const insertIndex = binarySearch(0, sortedArr.length, (maybeAfter) => cmp(thisValue, sortedArr[maybeAfter].value) < 0)
@@ -206,9 +206,9 @@ export class MappableReactiveArray<T> {
 		return sorted
 	}
 
-	effectForEach(fn: (value: T, index: ()=>number)=>void): void {
-		const handleItem = (item: ReactiveArrayItem<T>)=>{
-			return createEffect(()=>{
+	effectForEach(fn: (value: T, index: () => number) => void): void {
+		const handleItem = (item: ReactiveArrayItem<T>) => {
+			return createEffect(() => {
 				fn(item.value, item.index)
 			})
 		}
@@ -216,14 +216,14 @@ export class MappableReactiveArray<T> {
 		const destructables = this.rawArray.map(handleItem)
 
 		const outerOwner = getOwner()
-		onWrite(this.array.spliceEvent, (evt)=>{
+		onWrite(this.array.spliceEvent, (evt) => {
 			if (!evt) {
 				return
 			}
 
 			const [start, added, removed] = evt
 
-			const destructablesToAdd = runWithOwner(outerOwner, ()=>added.map(handleItem))
+			const destructablesToAdd = runWithOwner(outerOwner, () => added.map(handleItem))
 
 			const toDestroy = destructables.splice(start, removed.length, ...destructablesToAdd)
 
@@ -234,7 +234,7 @@ export class MappableReactiveArray<T> {
 	static fromWatchedArray<T>(arr: WatchedArray<T>): MappableReactiveArray<T> {
 		const out = new ReactiveArray(sample(arr.value))
 
-		onWrite(arr.spliceEvent, (evt)=>{
+		onWrite(arr.spliceEvent, (evt) => {
 			if (!evt) {
 				return
 			}
@@ -257,15 +257,15 @@ export class MappableReactiveArray<T> {
 
 export class ReactiveArray<T> extends MappableReactiveArray<T> {
 	splice(start: number, remove: number, ...insert: T[]): [added: ReactiveArrayItem<T>[], removed: ReactiveArrayItem<T>[]] {
-		const mappedInsert = insert.map((value, i) => ({value, index: createSignal(start+i)}))
+		const mappedInsert = insert.map((value, i) => ({ value, index: createSignal(start + i) }))
 
 		let removed: ReactiveArrayItem<T>[]
-		untrack(()=>{
-			batch(()=>{
+		untrack(() => {
+			batch(() => {
 				removed = this.array.splice(start, remove, ...mappedInsert)
 
 				const rawArr = this.array.value()
-				for (let i = start; i<this.array.length; i++) {
+				for (let i = start; i < this.array.length; i++) {
 					//@ts-ignore
 					rawArr[i].index(i)
 				}

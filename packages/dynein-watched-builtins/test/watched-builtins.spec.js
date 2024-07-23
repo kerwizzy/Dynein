@@ -3,13 +3,13 @@ import { ReactiveArray } from "../built/ReactiveArray.js"
 
 describe("@dynein/watched-builtins", () => {
 	describe("ReactiveArray", () => {
-		it("creates as expected", ()=>{
+		it("creates as expected", () => {
 			const arr = new ReactiveArray(["a", "b", "c"])
 
 			assert.strictEqual(Array.from(arr).join(""), "abc")
 		})
 
-		it("initializes indexes correctly", ()=>{
+		it("initializes indexes correctly", () => {
 			const arr = new ReactiveArray(["a", "b", "c"])
 
 			assert.strictEqual(arr.array.map(item => item.index()).join(","), "0,1,2")
@@ -17,7 +17,7 @@ describe("@dynein/watched-builtins", () => {
 	})
 
 	describe("ReactiveArray.splice", () => {
-		it("handles splices", ()=>{
+		it("handles splices", () => {
 			const arr = new ReactiveArray(["a", "b", "c"])
 
 			arr.splice(1, 1, "1", "2")
@@ -25,7 +25,7 @@ describe("@dynein/watched-builtins", () => {
 			assert.strictEqual(Array.from(arr).join(""), "a12c")
 		})
 
-		it("updates indexes after splices", ()=>{
+		it("updates indexes after splices", () => {
 			const arr = new ReactiveArray(["a", "b", "c"])
 
 			arr.splice(1, 1, "1", "2")
@@ -35,8 +35,8 @@ describe("@dynein/watched-builtins", () => {
 	})
 
 	describe("ReactiveArray.map", () => {
-		it("maps correctly", ()=>{
-			createRoot(()=>{
+		it("maps correctly", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c"])
 
 				const mapped = arr.map(c => c.toUpperCase())
@@ -45,8 +45,8 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("handles splice on the base", ()=>{
-			createRoot(()=>{
+		it("handles splice on the base", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c"])
 
 				const mapped = arr.map(c => c.toUpperCase())
@@ -63,12 +63,12 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("tracks mapper dependencies", ()=>{
-			createRoot(()=>{
+		it("tracks mapper dependencies", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c"])
 				const add = createSignal("")
 
-				const mapped = arr.map(c => c.toUpperCase()+add())
+				const mapped = arr.map(c => c.toUpperCase() + add())
 
 				assert.strictEqual(Array.from(mapped).join(","), "A,B,C")
 
@@ -78,19 +78,19 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("tracks mapper indexes", ()=>{
-			createRoot(()=>{
+		it("tracks mapper indexes", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c"])
 
 
 				let log = []
 				const mapped = arr.map((c, index) => {
-					log.push("+"+c) // create effect for mapping c
-					onCleanup(()=>{
-						log.push("-"+c) // destroy/rerun effect for mapping c
+					log.push("+" + c) // create effect for mapping c
+					onCleanup(() => {
+						log.push("-" + c) // destroy/rerun effect for mapping c
 					})
 
-					return c.toUpperCase()+index()
+					return c.toUpperCase() + index()
 				})
 
 				assert.strictEqual(Array.from(mapped).join(","), "A0,B1,C2")
@@ -103,15 +103,15 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("destroys mapper effects", ()=>{
-			createRoot(()=>{
+		it("destroys mapper effects", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c"])
 
 				let log = []
 				const mapped = arr.map(c => {
-					log.push("+"+c) // create effect for mapping c
-					onCleanup(()=>{
-						log.push("-"+c) // destroy/rerun effect for mapping c
+					log.push("+" + c) // create effect for mapping c
+					onCleanup(() => {
+						log.push("-" + c) // destroy/rerun effect for mapping c
 					})
 
 					return c.toUpperCase()
@@ -126,8 +126,8 @@ describe("@dynein/watched-builtins", () => {
 	})
 
 	describe("ReactiveArray.filter", () => {
-		it("filters correctly", ()=>{
-			createRoot(()=>{
+		it("filters correctly", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
 				const filtered = arr.filter(c => c > 2)
@@ -136,8 +136,8 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("handles splice on the base", ()=>{
-			createRoot(()=>{
+		it("handles splice on the base", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
 				const filtered = arr.filter(c => c > 2)
@@ -154,8 +154,8 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("handles splice on the base when no items are removed", ()=>{
-			createRoot(()=>{
+		it("handles splice on the base when no items are removed", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
 				const filtered = arr.filter(c => c > 2)
@@ -166,8 +166,8 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("handles splice on the base when removed items aren't kept", ()=>{
-			createRoot(()=>{
+		it("handles splice on the base when removed items aren't kept", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
 				const filtered = arr.filter(c => c > 2)
@@ -178,8 +178,8 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("handles index based filters", ()=>{
-			createRoot(()=>{
+		it("handles index based filters", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c", "d", "e", "f"])
 
 				const filtered = arr.filter((c, index) => index() % 2 === 1)
@@ -192,8 +192,8 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("doesn't splice output for same filter result", ()=>{
-			createRoot(()=>{
+		it("doesn't splice output for same filter result", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray(["a", "b", "c", "d", "e", "f"])
 
 				const filtered = arr.filter((c, index) => index() <= 3)
@@ -201,7 +201,7 @@ describe("@dynein/watched-builtins", () => {
 				assert.strictEqual(Array.from(filtered).join(","), "a,b,c,d")
 
 				const log = []
-				onWrite(filtered.array.spliceEvent, (evt)=>{
+				onWrite(filtered.array.spliceEvent, (evt) => {
 					if (!evt) {
 						return
 					}
@@ -221,21 +221,21 @@ describe("@dynein/watched-builtins", () => {
 	})
 
 	describe("ReactiveArray.sort", () => {
-		it("sorts correctly", ()=>{
-			createRoot(()=>{
+		it("sorts correctly", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
-				const sorted = arr.sort((a,b) => a-b)
+				const sorted = arr.sort((a, b) => a - b)
 
 				assert.strictEqual(Array.from(sorted).join(","), "0,1,3,4")
 			})
 		})
 
-		it("handles splice on the base", ()=>{
-			createRoot(()=>{
+		it("handles splice on the base", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
-				const sorted = arr.sort((a,b) => a-b)
+				const sorted = arr.sort((a, b) => a - b)
 
 				arr.splice(1, 1, 7, -1, 2)
 
@@ -244,20 +244,20 @@ describe("@dynein/watched-builtins", () => {
 
 				arr.splice(0, 2, 3, 10)
 
-				assert.strictEqual(Array.from(arr).join(","),    "3,10,-1,2,1,4")
+				assert.strictEqual(Array.from(arr).join(","), "3,10,-1,2,1,4")
 				assert.strictEqual(Array.from(sorted).join(","), "-1,1,2,3,4,10")
 			})
 		})
 
-		it("produces reasonable splice lists", ()=>{
-			createRoot(()=>{
+		it("produces reasonable splice lists", () => {
+			createRoot(() => {
 				const arr = new ReactiveArray([0, 3, 1, 4])
 
-				const sorted = arr.sort((a,b) => a-b)
+				const sorted = arr.sort((a, b) => a - b)
 
 
 				const log = []
-				onWrite(sorted.array.spliceEvent, (evt)=>{
+				onWrite(sorted.array.spliceEvent, (evt) => {
 					if (!evt) {
 						return
 					}
@@ -278,22 +278,22 @@ describe("@dynein/watched-builtins", () => {
 		})
 	})
 
-	describe("ReactiveArray.effectForEach", ()=>{
-		it("runs effects", ()=>{
-			createRoot(()=>{
+	describe("ReactiveArray.effectForEach", () => {
+		it("runs effects", () => {
+			createRoot(() => {
 				const counts = new Map()
 
 				const arr = new ReactiveArray(["a", "b", "c"])
 
-				arr.effectForEach((c)=>{
+				arr.effectForEach((c) => {
 					if (!counts.has(c)) {
 						counts.set(c, 0)
 					}
 
-					counts.set(c, counts.get(c)+1)
+					counts.set(c, counts.get(c) + 1)
 
-					onCleanup(()=>{
-						counts.set(c, counts.get(c)-1)
+					onCleanup(() => {
+						counts.set(c, counts.get(c) - 1)
 					})
 				})
 
@@ -301,21 +301,21 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("reruns effects on splice", ()=>{
-			createRoot(()=>{
+		it("reruns effects on splice", () => {
+			createRoot(() => {
 				const counts = new Map()
 
 				const arr = new ReactiveArray(["a", "b", "c"])
 
-				arr.effectForEach((c)=>{
+				arr.effectForEach((c) => {
 					if (!counts.has(c)) {
 						counts.set(c, 0)
 					}
 
-					counts.set(c, counts.get(c)+1)
+					counts.set(c, counts.get(c) + 1)
 
-					onCleanup(()=>{
-						counts.set(c, counts.get(c)-1)
+					onCleanup(() => {
+						counts.set(c, counts.get(c) - 1)
 					})
 				})
 
@@ -327,25 +327,25 @@ describe("@dynein/watched-builtins", () => {
 			})
 		})
 
-		it("reruns effect only when necessary", ()=>{
-			createRoot(()=>{
+		it("reruns effect only when necessary", () => {
+			createRoot(() => {
 				const counts = new Map()
 
 				const arr = new ReactiveArray(["a", "b", "c"])
 
 				const log = []
 
-				arr.effectForEach((c)=>{
+				arr.effectForEach((c) => {
 					if (!counts.has(c)) {
 						counts.set(c, 0)
 					}
 
-					log.push("+"+c)
-					counts.set(c, counts.get(c)+1)
+					log.push("+" + c)
+					counts.set(c, counts.get(c) + 1)
 
-					onCleanup(()=>{
-						log.push("-"+c)
-						counts.set(c, counts.get(c)-1)
+					onCleanup(() => {
+						log.push("-" + c)
+						counts.set(c, counts.get(c) - 1)
 					})
 				})
 

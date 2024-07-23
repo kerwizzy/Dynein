@@ -1,4 +1,4 @@
-import * as D from "@dynein/state";
+import * as D from "@dynein/state"
 import {
 	SharedStateEndpoint,
 	SetMessage,
@@ -10,12 +10,12 @@ import {
 	SharedArray,
 	SharedSet,
 	SharedMap
-} from "./serialize.js";
+} from "./serialize.js"
 
 interface ClientParams {
-	sendMessage: (msg: any) => void;
-	setupOnMessage: (onmessage: (msg: any) => void) => void;
-	uuid: () => string;
+	sendMessage: (msg: any) => void
+	setupOnMessage: (onmessage: (msg: any) => void) => void
+	uuid: () => string
 }
 
 // Based on https://stackoverflow.com/a/43636793
@@ -23,80 +23,80 @@ function stableJSONStringify(obj: any) {
 	return JSON.stringify(obj, (key, value) =>
 		value instanceof Object && !Array.isArray(value)
 			? Object.keys(value)
-					.sort()
-					.reduce((sorted: any, key) => {
-						sorted[key] = value[key];
-						return sorted;
-					}, {})
+				.sort()
+				.reduce((sorted: any, key) => {
+					sorted[key] = value[key]
+					return sorted
+				}, {})
 			: value
-	);
+	)
 }
 
-export class APIError extends Error {}
+export class APIError extends Error { }
 
 export class SharedStateClient extends SharedStateEndpoint {
-	private params: ClientParams;
+	private params: ClientParams
 
-	private unsubscribeReg: FinalizationRegistry<string>;
+	private unsubscribeReg: FinalizationRegistry<string>
 
 	debounceInterval = 50;
 
 	uuid(): string {
-		return this.params.uuid();
+		return this.params.uuid()
 	}
 
 	constructor(params: ClientParams) {
-		super();
+		super()
 		this.unsubscribeReg = new FinalizationRegistry((key: string) => {
 			//console.log("GC",key)
 			this.sharedSignalsByKey.delete(key)
 			this.send({
 				cmd: "unsubscribe",
 				key
-			});
-		});
+			})
+		})
 
-		this.params = params;
+		this.params = params
 
 		this.params.setupOnMessage((msg) => {
-			this.clientHandleMessage(msg);
-		});
+			this.clientHandleMessage(msg)
+		})
 	}
 
 	protected clientHandleMessage(msg: ServerToClientMessage) {
 		switch (msg.cmd) {
 			case "err":
-				console.warn(`Server error: in processing ${msg.causeCmd}: ${msg.err}`);
-				break;
+				console.warn(`Server error: in processing ${msg.causeCmd}: ${msg.err}`)
+				break
 			case "rpcOK":
 			case "rpcErr":
-				const id = msg.id;
-				const resolvers = this.pendingRPCResolvers.get(id);
+				const id = msg.id
+				const resolvers = this.pendingRPCResolvers.get(id)
 				if (!resolvers) {
-					throw new Error("Got reply to unknown RPC id");
+					throw new Error("Got reply to unknown RPC id")
 				}
-				const [resolve, reject] = resolvers;
-				this.pendingRPCResolvers.delete(id);
+				const [resolve, reject] = resolvers
+				this.pendingRPCResolvers.delete(id)
 				if (msg.cmd === "rpcOK") {
-					resolve(this.deserialize(msg.res));
+					resolve(this.deserialize(msg.res))
 				} else {
-					reject(new APIError(msg.err));
+					reject(new APIError(msg.err))
 				}
-				break;
+				break
 			default:
-				super.handleMessage("server", msg);
-				break;
+				super.handleMessage("server", msg)
+				break
 		}
 	}
 
 	protected async send(msg: ClientToServerMessage) {
-		this.params.sendMessage(msg);
+		this.params.sendMessage(msg)
 	}
 
 	protected broadcastUpdate(msg: SetMessage | UpdateMessage, blockSendTo: string | undefined) {
 		// console.log("broadcast update block send to", blockSendTo);
 		if (blockSendTo !== "server") {
-			this.send(msg);
+			this.send(msg)
 		}
 	}
 
@@ -121,20 +121,20 @@ export class SharedStateClient extends SharedStateEndpoint {
 
 	protected getSignalByKey(key: string): SharedSignal<any> | undefined {
 		if (this.sharedSignalsByKey.has(key)) {
-			const ref = this.sharedSignalsByKey.get(key)!;
-			const val = ref.deref();
+			const ref = this.sharedSignalsByKey.get(key)!
+			const val = ref.deref()
 			if (!val) {
 				//console.warn("Maybe tried to fetch a GCd signal");
 				return undefined
 			} else {
-				return val;
+				return val
 			}
 		}
 	}
 
 	protected setSignalByKey(key: string, signal: SharedSignal<any>) {
-		this.sharedSignalsByKey.set(key, new WeakRef(signal));
-		this.unsubscribeReg.register(signal, key, signal);
+		this.sharedSignalsByKey.set(key, new WeakRef(signal))
+		this.unsubscribeReg.register(signal, key, signal)
 	}
 
 	protected gcProtected = new Set<SharedSignal<any>>()
@@ -151,19 +151,19 @@ export class SharedStateClient extends SharedStateEndpoint {
 	}
 
 	private _clientMakeOrGetSignal<T>(key: string, init: T, updateOnEqual: boolean, initalFetch: boolean): { cached: boolean, signal: SharedSignal<T> } {
-		const result = super._makeOrGetSignal(key, init, updateOnEqual);
+		const result = super._makeOrGetSignal(key, init, updateOnEqual)
 		if (!result.cached) {
 			if (initalFetch) {
-				this.send({ cmd: "get", key, init: this.serialize(D.sample(result.signal) as any), updateOnEqual });
+				this.send({ cmd: "get", key, init: this.serialize(D.sample(result.signal) as any), updateOnEqual })
 			} else {
-				this.send({ cmd: "subscribe", key})
+				this.send({ cmd: "subscribe", key })
 			}
 		}
-		return result;
+		return result
 	}
 
 	forceRefresh(signal: SharedSignal<any>) {
-		this.send({ cmd: "get", key: signal.key, init: this.serialize(D.sample(signal) as any), updateOnEqual: signal.sharedSignalUpdateOnEqual });
+		this.send({ cmd: "get", key: signal.key, init: this.serialize(D.sample(signal) as any), updateOnEqual: signal.sharedSignalUpdateOnEqual })
 	}
 
 	private rpcIDCounter = 0;
@@ -172,17 +172,17 @@ export class SharedStateClient extends SharedStateEndpoint {
 
 	public async rpc(arg: any) {
 		return new Promise((resolve, reject) => {
-			const id = this.rpcIDCounter++;
-			this.pendingRPCResolvers.set(id, [resolve, reject]);
+			const id = this.rpcIDCounter++
+			this.pendingRPCResolvers.set(id, [resolve, reject])
 			this.send({
 				cmd: "rpc",
 				id,
 				arg: this.serialize(arg)
-			});
-		});
+			})
+		})
 	}
 
 	public getObjectSignal<T>(obj: any, init: T, updateOnEqual = false, initialFetch = true): SharedSignal<T> {
-		return this._clientMakeOrGetSignal("$" + stableJSONStringify(obj), init, updateOnEqual, initialFetch).signal;
+		return this._clientMakeOrGetSignal("$" + stableJSONStringify(obj), init, updateOnEqual, initialFetch).signal
 	}
 }

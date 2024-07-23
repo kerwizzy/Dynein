@@ -31,12 +31,12 @@ class Hyperfor<T> {
 	endItem: ItemPatchState<T> | null = null
 	start: Node
 	end: Node
-	render: (item: T, index: ()=>number) => void
+	render: (item: T, index: () => number) => void
 	owner: Owner
 
 	patchScheduled: boolean = false
 
-	constructor(render: (item: T, index: ()=>number) => void) {
+	constructor(render: (item: T, index: () => number) => void) {
 		this.render = render
 		this.start = addNode(document.createComment("<hyperfor>"))
 		this.end = addNode(document.createComment("</hyperfor>"))
@@ -66,7 +66,7 @@ class Hyperfor<T> {
 			return
 		}
 		this.patchScheduled = true
-		requestAnimationFrame(()=>{
+		requestAnimationFrame(() => {
 			this.patch()
 		})
 	}
@@ -79,16 +79,16 @@ class Hyperfor<T> {
 		let itemIterator = this.startItem
 		let prevNode = this.start
 		const render = this.render // assign to a variable so the Hyperfor isn't set as the `this` value inside `render()`
-		assertStatic(()=>{
+		assertStatic(() => {
 			let index = 0
 			while (itemIterator) {
 				const item = itemIterator
 				if (item.state === RenderState.add) {
 					item.indexSignal(index)
 
-					setInsertionState(prevNode.parentNode, prevNode.nextSibling, false, ()=>{
+					setInsertionState(prevNode.parentNode, prevNode.nextSibling, false, () => {
 						item.start = addNode(document.createComment(item!.debugID))
-						runWithOwner(item.owner, ()=>{
+						runWithOwner(item.owner, () => {
 							try {
 								render(item!.value, item.indexSignal)
 							} catch (err) {
@@ -142,10 +142,10 @@ class Hyperfor<T> {
 	}
 }
 
-export default function hyperfor<T>(list: WatchedArray<T>, render: (item: T, index: ()=>number) => void): void
-export default function hyperfor<T>(list: WatchedSet<T>, render: (item: T, index: ()=>number) => void): void
-export default function hyperfor<K, V>(list: WatchedMap<K, V>, render: (item: [K, V], index: ()=>number) => void): void
-export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | WatchedMap<any, any>, render: (item: any, index: ()=>number) => void): void {
+export default function hyperfor<T>(list: WatchedArray<T>, render: (item: T, index: () => number) => void): void
+export default function hyperfor<T>(list: WatchedSet<T>, render: (item: T, index: () => number) => void): void
+export default function hyperfor<K, V>(list: WatchedMap<K, V>, render: (item: [K, V], index: () => number) => void): void
+export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | WatchedMap<any, any>, render: (item: any, index: () => number) => void): void {
 	const hyp = new Hyperfor(render)
 
 	// WatchedSet should behave like a set being used like an array, and WatchedMap should behave
@@ -173,7 +173,7 @@ export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | Wat
 					end: null,
 					indexSignal: createSignal(0),
 					owner: new Owner(hyp.owner),
-					debugID: "dbg_"+Math.random().toString(16).substring(2, 8)
+					debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
 				}
 				hyp.endItem = state // TODO is there some more efficient way to figure out endItem?
 				if (prev) {
@@ -212,7 +212,7 @@ export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | Wat
 					end: null,
 					indexSignal: createSignal(0),
 					owner: new Owner(hyp.owner),
-					debugID: "dbg_"+Math.random().toString(16).substring(2, 8)
+					debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
 				}
 				keyToNodeMap.set(key, state)
 				if (!hyp.startItem) {
@@ -242,7 +242,7 @@ export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | Wat
 						end: null,
 						indexSignal: createSignal(0),
 						owner: new Owner(hyp.owner),
-						debugID: "dbg_"+Math.random().toString(16).substring(2, 8)
+						debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
 					}
 
 					if (!existingNode.next) {
@@ -284,7 +284,7 @@ export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | Wat
 					end: null,
 					indexSignal: createSignal(0),
 					owner: new Owner(hyp.owner),
-					debugID: "dbg_"+Math.random().toString(16).substring(2, 8)
+					debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
 				}
 				if (prev) {
 					prev.next = state
@@ -308,20 +308,20 @@ export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | Wat
 
 			const [start, added, removed] = evt
 
-			for (let i = start; i<start+removed.length; i++) {
+			for (let i = start; i < start + removed.length; i++) {
 				desiredState[i].state = RenderState.remove
 			}
-			const afterIndex = start+removed.length
-			const lastRemoved = afterIndex >= 1 ? desiredState[afterIndex-1] : null
+			const afterIndex = start + removed.length
+			const lastRemoved = afterIndex >= 1 ? desiredState[afterIndex - 1] : null
 			let prev = lastRemoved
 			const afterInsert = prev ? prev.next : hyp.startItem
 
 			const toInsert: ItemPatchState<any>[] = []
 
-			for (let j = 0; j<added.length; j++) {
+			for (let j = 0; j < added.length; j++) {
 				const value = added[j]
 
-				const debugID = "dbg_"+Math.random().toString(16).substring(2, 8)
+				const debugID = "dbg_" + Math.random().toString(16).substring(2, 8)
 				const state: ItemPatchState<any> = {
 					state: RenderState.add,
 					value,

@@ -1,3 +1,3 @@
-import {assert} from 'chai'
+import { assert } from 'chai'
 
 global.assert = assert
