@@ -58,11 +58,24 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 	join(sep?: string): string {
 		return this.value().join(sep)
 	}
-	[Symbol.iterator]() {
-		return this.value()[Symbol.iterator]()
-	}
+
 	get length() {
 		return this.value().length
+	}
+	entries() {
+		return this.value().entries();
+	}
+
+	keys() {
+		return this.value().keys()
+	}
+
+	values() {
+		return this.value().values()
+	}
+
+	[Symbol.iterator]() {
+		return this.value()[Symbol.iterator]()
 	}
 
 	splice(start: number, remove: number, ...insert: T[]) {

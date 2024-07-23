@@ -1,7 +1,7 @@
 import { Signal, sample } from "@dynein/state"
 
 export default abstract class WatchedValue<U> {
-	abstract value: Signal<U>;
+	abstract readonly value: Signal<U>;
 
 	protected get v() {
 		return sample(this.value);
