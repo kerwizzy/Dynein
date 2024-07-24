@@ -91,7 +91,7 @@ value() //gets value, returns 1 at this point
 function isSignal(thing: any): boolean
 ```
 
-Returns whether or not `thing` is a signal object which was created with [`D.createSignal`](#dcreatesignal).
+Returns whether or not `thing` is a signal object which was created with [`D.createSignal`](#dcreatesignal) or [`D.toSignal`](#dtosignal).
 
 ### `D.createEffect`
 
@@ -243,6 +243,14 @@ function runWithContext<T, R>(context: Context<T>, value: T, inner: () => R): R
 
 Creates a new [Owner](#downer) with context key `context` set to `value`, runs `inner` inside that owner, and returns the result.
 
+### `D.saveContexts`
+
+```ts
+function saveContexts(contexts: Context<any>[]): <T>(inner: ()=>T) => T
+```
+
+Saves the current values of each Context in `contexts` and returns a function which will restore those values within `inner`.
+
 ### `D.useContext`
 
 ```ts
@@ -268,7 +276,7 @@ Note however that if you get or set `createSignal`-generated signals in `getter`
 ### `D.onUpdate`
 
 ```ts
-export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Destructable
+function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Destructable
 ```
 
 Utility function for listening for updates to `signal`. The `listener` will be called with the new value of `signal` when `signal` fires an update.
@@ -288,6 +296,14 @@ function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Destruct
 	});
 }
 ```
+
+### `D.onWrite`
+
+```ts
+function onWrite<T>(getter: Signal<T>, listener: (newValue: T) => void): void
+```
+
+`D.onWrite` is somewhat similar to [`D.onUpdate`](#donupdate), but unlike the listeners added with `D.onUpdate`, the listeners added with `D.onWrite` execute immediately (no matter the context in which the signal is written to), and are all executed before the `signal(value)` call returns.
 
 ### `D.createMemo`
 
