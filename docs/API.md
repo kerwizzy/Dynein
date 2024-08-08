@@ -343,7 +343,7 @@ const b = D.createSignal("")
 D.createEffect(()=>{
 	console.log("running effect")
 	console.log("a = "+a())
-	console.log("b = "+a())
+	console.log("b = "+b())
 	console.log("done running effect")
 })
 
@@ -359,17 +359,17 @@ handleEvent()
 This would log:
 ```
 running effect
-a=
-b=
+a =
+b =
 done running effect
 handling event
 running effect
-a=a
-b=
+a = a
+b =
 done running effect
 running effect
-a=a
-b=b
+a = a
+b = b
 done running effect
 done handling event
 ```
@@ -599,7 +599,7 @@ For form controls, you can pass a signal to the `value` (or `checked`, for check
 
 e.g.,
 ```ts
-const str = $("test")
+const str = D.createSignal("test")
 
 input({type:"text", value:str})
 button({onclick:()=>{
