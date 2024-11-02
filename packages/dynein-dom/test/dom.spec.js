@@ -85,7 +85,7 @@ describe("@dynein/dom", () => {
 			it("throws when out of context", () => {
 				assert.throws(() => {
 					elements.div()
-				})
+				}, "not rendering")
 			})
 
 			it("sets attrs", () => {
@@ -145,7 +145,7 @@ describe("@dynein/dom", () => {
 						elements.div(() => {
 							throw new Error("Err")
 						})
-					})
+					}, "Err")
 				})
 			})
 
@@ -326,7 +326,7 @@ describe("@dynein/dom", () => {
 					addText(() => {
 						throw new Error("err")
 					})
-				})
+				}, "err")
 			})
 		})
 
@@ -336,7 +336,7 @@ describe("@dynein/dom", () => {
 					addText(() => {
 						elements.div()
 					})
-				})
+				}, "not rendering")
 			})
 		})
 	})
@@ -360,7 +360,7 @@ describe("@dynein/dom", () => {
 			const document = mount(() => {
 				assert.throws(() => {
 					addHTML(() => "test")
-				})
+				}, "HTML must be a string or number")
 			})
 		})
 	})
@@ -473,7 +473,7 @@ describe("@dynein/dom", () => {
 					addIf(() => 1, () => {
 						throw new Error("err")
 					})
-				})
+				}, "err")
 			})
 		})
 
@@ -663,7 +663,7 @@ describe("@dynein/dom", () => {
 					addDynamic(() => {
 						throw new Error("err")
 					})
-				})
+				}, "err")
 			})
 		})
 
@@ -892,7 +892,16 @@ describe("@dynein/dom", () => {
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
 			assert.strictEqual(ranShouldntShowUp, true)
 		})
+
+
+		it("throws on attempting element creation outside of $r", () => {
+			assert.throws(() => {
+				const document = mount(() => {
+					addAsyncReplaceable(() => {
+						elements.div()
+					})
+				})
+			}, "not rendering")
+		})
 	})
-
 })
-

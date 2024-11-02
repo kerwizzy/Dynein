@@ -370,15 +370,17 @@ export function addAsyncReplaceable(
 		($r) => {
 			const saved = getOwner()
 			const owner = new Owner()
-			setupReplacements((inner) => {
-				owner.reset()
-				return runWithOwner(owner, () => {
-					return assertStatic(() => {
-						return $r(inner)
+			setInsertionState(null, null, false, () => {
+				setupReplacements((inner) => {
+					owner.reset()
+					return runWithOwner(owner, () => {
+						return assertStatic(() => {
+							return $r(inner)
+						})
 					})
+				}, (inner: () => void) => {
+					runWithOwner(saved, inner)
 				})
-			}, (inner: () => void) => {
-				runWithOwner(saved, inner)
 			})
 		}
 	)
