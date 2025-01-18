@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, schedule, onBatchEnd, assertStatic, subclock, _getInternalState, runWithOwner, runWithBaseState, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js"
+import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext } from "../built/state.js"
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -874,43 +874,6 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{Sclock{B{1}B A{2}A s{2 a++{}a++ b++{Sclock{B{2}B A{3}A s{3 }s ")
 		})
 
-		it("subclock doesn't leak state to schedule", () => {
-			let state = "NOT RUN"
-
-			createRoot(() => {
-				createEffect(() => {
-					subclock(() => {
-						schedule(() => {
-							state = _getInternalState()
-						})
-					})
-				})
-			})
-
-			assert.strictEqual(state.currentOwner, undefined)
-			assert.strictEqual(state.assertedStatic, false)
-			assert.strictEqual(state.collectingDependencies, false)
-		})
-
-		it("subclock doesn't leak state to onBatchEnd", () => {
-			let state = "NOT RUN"
-
-			createRoot(() => {
-				createEffect(() => {
-					subclock(() => {
-						onBatchEnd(() => {
-							state = _getInternalState()
-						})
-					})
-				})
-			})
-
-			assert.strictEqual(state.currentOwner, undefined)
-			assert.strictEqual(state.assertedStatic, false)
-			assert.strictEqual(state.collectingDependencies, false)
-		})
-
-
 		// See https://github.com/adamhaile/S/issues/32
 		// Basically, the data().length shouldn't be run when data() is null
 		it("Sjs issue 32", () => {
@@ -1404,6 +1367,109 @@ describe("@dynein/state", () => {
 	})
 
 	describe("stashState", () => {
+		it("saves and restores all state", () => {
+			const ctx = createContext("a")
+			const owner = new Owner(null)
+
+			let stashN = 1
+			function logState(expectStr) {
+				const out = `ctx = ${useContext(ctx)}, owner eq ${getOwner() === owner}, collecting = ${_getInternalState().collectingDependencies}, assertStatic = ${_getInternalState().assertedStatic}`
+
+				assert.strictEqual(out, expectStr, `stash${stashN++} str`)
+				return out
+			}
+
+			function checkRestore(restore, checkStr) {
+				restore(() => {
+					logState(checkStr)
+				})
+			}
+
+			const stash1Str = logState(`ctx = a, owner eq false, collecting = false, assertStatic = false`)
+			const stash1 = stashState()
+
+			let stash2Str
+			let stash2
+			runWithContext(ctx, "b", () => {
+				stash2Str = logState(`ctx = b, owner eq false, collecting = false, assertStatic = false`)
+				stash2 = stashState()
+			})
+
+			let stash3Str
+			let stash3
+			runWithOwner(owner, () => {
+				stash3Str = logState(`ctx = a, owner eq true, collecting = false, assertStatic = false`)
+				stash3 = stashState()
+			})
+
+			let stash4Str
+			let stash4
+			assertStatic(() => {
+				stash4Str = logState(`ctx = a, owner eq false, collecting = false, assertStatic = true`)
+				stash4 = stashState()
+			})
+
+			let stash5Str
+			let stash5
+			createRoot(() => {
+				createEffect(() => {
+					stash5Str = logState(`ctx = a, owner eq false, collecting = true, assertStatic = false`)
+					stash5 = stashState()
+				})
+			})
+
+			checkRestore(stash1, stash1Str)
+			checkRestore(stash2, stash2Str)
+			checkRestore(stash3, stash3Str)
+			checkRestore(stash4, stash4Str)
+			checkRestore(stash5, stash5Str)
+
+			stash1(() => {
+				stashN = 1
+				checkRestore(stash1, stash1Str)
+				checkRestore(stash2, stash2Str)
+				checkRestore(stash3, stash3Str)
+				checkRestore(stash4, stash4Str)
+				checkRestore(stash5, stash5Str)
+			})
+
+			stash2(() => {
+				stashN = 1
+				checkRestore(stash1, stash1Str)
+				checkRestore(stash2, stash2Str)
+				checkRestore(stash3, stash3Str)
+				checkRestore(stash4, stash4Str)
+				checkRestore(stash5, stash5Str)
+			})
+
+			stash3(() => {
+				stashN = 1
+				checkRestore(stash1, stash1Str)
+				checkRestore(stash2, stash2Str)
+				checkRestore(stash3, stash3Str)
+				checkRestore(stash4, stash4Str)
+				checkRestore(stash5, stash5Str)
+			})
+
+			stash4(() => {
+				stashN = 1
+				checkRestore(stash1, stash1Str)
+				checkRestore(stash2, stash2Str)
+				checkRestore(stash3, stash3Str)
+				checkRestore(stash4, stash4Str)
+				checkRestore(stash5, stash5Str)
+			})
+
+			stash5(() => {
+				stashN = 1
+				checkRestore(stash1, stash1Str)
+				checkRestore(stash2, stash2Str)
+				checkRestore(stash3, stash3Str)
+				checkRestore(stash4, stash4Str)
+				checkRestore(stash5, stash5Str)
+			})
+		})
+
 		it("doesn't freeze state popping", () => {
 			const ctx = createContext()
 
@@ -2147,436 +2213,6 @@ describe("@dynein/state", () => {
 		})
 	})
 
-	describe("schedule", () => {
-		it("runs immediately outside of a batch", () => {
-			let ran = false
-			schedule(() => {
-				ran = true
-			})
-			assert.strictEqual(ran, true)
-		})
-
-		it("runs at the end of a batch", () => {
-			let order = ""
-			batch(() => {
-				order += "a "
-				schedule(() => {
-					order += "end"
-				})
-				order += "b "
-			})
-			assert.strictEqual(order, "a b end")
-		})
-
-		it("runs at the end of all batches", () => {
-			let order = ""
-			batch(() => {
-				order += "a "
-
-				batch(() => {
-					order += "b "
-					batch(() => {
-						order += "c "
-						schedule(() => {
-							order += "end"
-						})
-						order += "d "
-					})
-					order += "e "
-				})
-				order += "f "
-			})
-			assert.strictEqual(order, "a b c d e f end")
-		})
-
-		it("runs in order with effects in a batch", () => {
-			let a = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "A{"
-					a()
-					order += "}A "
-				})
-			})
-
-
-			order += "B{"
-			batch(() => {
-				order += "#1 "
-				schedule(() => {
-					order += "end "
-				})
-				order += "#2 "
-				a(1)
-				order += "#3 "
-			})
-			order += "}B"
-			assert.strictEqual(order, "A{}A B{#1 #2 #3 end A{}A }B")
-		})
-
-		it("batches its own changes", () => {
-			let a = createSignal(0)
-			let b = createSignal(0)
-			let c = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "AB{"
-					a()
-					b()
-					order += "}AB "
-				})
-
-				createEffect(() => {
-					order += "C{"
-					c()
-					order += "}C "
-				})
-			})
-
-			order += "batch{"
-			batch(() => {
-				order += "#1 "
-				schedule(() => {
-					order += "schedule{ "
-					a(1)
-					b(2)
-					order += "}schedule "
-				})
-				order += "#2 "
-				c(1)
-				order += "#3 "
-			})
-			order += "}batch "
-
-			assert.strictEqual(order, "AB{}AB C{}C batch{#1 #2 #3 schedule{ }schedule C{}C AB{}AB }batch ")
-		})
-
-		it("batches its own changes even when called at root", () => {
-			let a = createSignal(0)
-			let b = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "AB{"
-					a()
-					b()
-					order += "}AB "
-				})
-			})
-
-			schedule(() => {
-				order += "schedule{ "
-				a(1)
-				b(2)
-				order += "}schedule "
-			})
-
-			assert.strictEqual(order, "AB{}AB schedule{ }schedule AB{}AB ")
-		})
-
-		it("does not pass errors (1)", () => {
-			assert.doesNotThrow(() => {
-				schedule(() => {
-					throw new Error("test")
-				})
-			})
-		})
-
-		it("does not pass errors (2)", () => {
-			assert.doesNotThrow(() => {
-				batch(() => {
-					schedule(() => {
-						throw new Error("test")
-					})
-				})
-			})
-		})
-	})
-
-	describe("onBatchEnd", () => {
-		it("runs immediately outside of a batch", () => {
-			let ran = false
-			onBatchEnd(() => {
-				ran = true
-			})
-			assert.strictEqual(ran, true)
-		})
-
-		it("runs at the end of a batch", () => {
-			let order = ""
-			batch(() => {
-				order += "a "
-				onBatchEnd(() => {
-					order += "end"
-				})
-				order += "b "
-			})
-			assert.strictEqual(order, "a b end")
-		})
-
-		it("runs at the end of all batches", () => {
-			let order = ""
-			batch(() => {
-				order += "a "
-
-				batch(() => {
-					order += "b "
-					batch(() => {
-						order += "c "
-						onBatchEnd(() => {
-							order += "end"
-						})
-						order += "d "
-					})
-					order += "e "
-				})
-				order += "f "
-			})
-			assert.strictEqual(order, "a b c d e f end")
-		})
-
-		it("runs after all effects in a batch", () => {
-			let a = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "A{"
-					a()
-					order += "}A "
-				})
-			})
-
-
-			order += "B{"
-			batch(() => {
-				order += "#1 "
-				onBatchEnd(() => {
-					order += "end "
-				})
-				order += "#2 "
-				a(1)
-				order += "#3 "
-			})
-			order += "}B"
-			assert.strictEqual(order, "A{}A B{#1 #2 #3 A{}A end }B")
-		})
-
-		it("all onBatchEnd changes are batched", () => {
-			let a = createSignal(0)
-			let b = createSignal(0)
-			let c = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "A{"
-					a()
-					b()
-					c()
-					order += "}A "
-				})
-			})
-
-
-			order += "B{"
-			batch(() => {
-				order += "#1 "
-				onBatchEnd(() => {
-					order += "end0 "
-					a(2)
-					b(2)
-				})
-				onBatchEnd(() => {
-					order += "end1 "
-					c(2)
-				})
-				order += "#2 "
-				a(1)
-				order += "#3 "
-			})
-			order += "}B"
-			assert.strictEqual(order, "A{}A B{#1 #2 #3 A{}A end0 end1 A{}A }B")
-		})
-
-		it("second-level onBatchEnds run before effects triggered by onBatchEnd", () => {
-			let a = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "A{"
-					a()
-					order += "}A "
-				})
-			})
-
-
-			order += "B{"
-			batch(() => {
-				order += "#1 "
-				onBatchEnd(() => {
-					order += "end0 "
-					a(2)
-					onBatchEnd(() => {
-						order += "nested "
-					})
-				})
-				onBatchEnd(() => {
-					order += "end1 "
-				})
-				order += "#2 "
-				a(1)
-				order += "#3 "
-			})
-			order += "}B"
-			assert.strictEqual(order, "A{}A B{#1 #2 #3 A{}A end0 end1 nested A{}A }B")
-		})
-
-		it("runs second-order triggers at the end of a subclock queue, not in the root queue", () => {
-			let a = createSignal(0)
-			let b = createSignal(0)
-
-			let order = ""
-			createRoot(() => {
-				createEffect(() => {
-					order += "A{"
-					a()
-					order += "}A "
-				})
-
-				createEffect(() => {
-					order += "B{"
-					b()
-					order += "}B "
-				})
-			})
-
-			order += "batch{"
-			batch(() => {
-				a(1)
-				onBatchEnd(() => {
-					order += "aBatchEnd "
-				})
-
-				order += "subclock{"
-				subclock(() => {
-					b(1)
-					onBatchEnd(() => {
-						order += "bBatchEnd "
-						schedule(() => {
-							order += "nested1{"
-							b(2)
-							order += "}nested1 "
-						})
-						onBatchEnd(() => {
-							order += "nested2 "
-						})
-					})
-				})
-				order += "}subclock "
-			})
-			order += "}batch "
-
-			assert.strictEqual(order, "A{}A B{}B batch{subclock{B{}B bBatchEnd nested2 nested1{}nested1 B{}B }subclock A{}A aBatchEnd }batch ")
-		})
-
-		it("does not pass errors (1)", () => {
-			assert.doesNotThrow(() => {
-				onBatchEnd(() => {
-					throw new Error("test")
-				})
-			})
-		})
-
-		it("does not pass errors (2)", () => {
-			assert.doesNotThrow(() => {
-				batch(() => {
-					onBatchEnd(() => {
-						throw new Error("test")
-					})
-				})
-			})
-		})
-	})
-
-	describe("runWithBaseState", () => {
-		it("runs the passed code with all state cleared", () => {
-			const ctx = createContext(undefined)
-
-			let innerState
-			let innerCtx
-
-			let afterState
-			let afterCtx
-
-			createRoot(() => {
-				createEffect(() => {
-					runWithContext(ctx, 1, () => {
-						runWithBaseState(() => {
-							innerState = _getInternalState()
-							innerCtx = useContext(ctx)
-						})
-
-						afterState = _getInternalState()
-						afterCtx = useContext(ctx)
-					})
-				})
-			})
-
-			assert.strictEqual(innerState.currentOwner, undefined)
-			assert.strictEqual(innerState.assertedStatic, false)
-			assert.strictEqual(innerState.collectingDependencies, false)
-			assert.strictEqual(innerCtx, undefined)
-
-			assert.strictEqual(!!afterState.currentOwner, true)
-			assert.strictEqual(afterState.assertedStatic, false)
-			assert.strictEqual(afterState.collectingDependencies, true)
-			assert.strictEqual(afterCtx, 1)
-		})
-
-		it("doesn't start other pending effects", () => {
-			const a = createSignal(0)
-			const b = createSignal(0)
-
-			let order = ""
-
-			createRoot(() => {
-				createEffect(() => {
-					order += "A{"
-					a()
-					order += "}A "
-				})
-
-				createEffect(() => {
-					order += "B{"
-					b()
-					order += "}B "
-				})
-			})
-
-			order += "batch{"
-			batch(() => {
-				a(1)
-				order += "runWithBaseState{"
-				runWithBaseState(() => {
-					order += "setB{"
-					b(1)
-					order += "}setB "
-				})
-				order += "}runWithBaseState "
-			})
-			order += "}batch "
-
-			assert.strictEqual(order, "A{}A B{}B batch{runWithBaseState{setB{}setB }runWithBaseState A{}A B{}B }batch ")
-		})
-	})
-
 	describe("onCleanup", () => {
 		it("can trigger an effect update without causing an infinite loop", () => {
 			const sig = createSignal(0)
@@ -2707,69 +2343,6 @@ describe("@dynein/state", () => {
 
 			assert.strictEqual(innerOwner1, innerOwner2)
 		})
-
-		it("passes dependency collection when saved in a tracking context", () => {
-			let runs = 0
-			let sig1 = createSignal(0)
-			let sig2 = createSignal(0)
-
-			let savedOwner
-
-			createRoot(() => {
-				createEffect(() => {
-					sig1()
-					runs++
-					savedOwner = getOwner()
-				})
-			})
-
-			createRoot(() => {
-				createEffect(() => {
-					untrack(() => {
-						runWithOwner(savedOwner, () => {
-							sig2()
-							assert.strictEqual(_getInternalState().assertedStatic, false)
-							assert.strictEqual(_getInternalState().collectingDependencies, true)
-						})
-					})
-				})
-			})
-
-			assert.strictEqual(runs, 1)
-			sig2(1)
-			assert.strictEqual(runs, 2)
-			sig1(1)
-			assert.strictEqual(runs, 3)
-		})
-
-		it("does not cause dependency collection when saved in a non-tracking context", () => {
-			let runs = 0
-			let sig1 = createSignal(0)
-			let sig2 = createSignal(0)
-
-			let savedOwner
-			createRoot(() => {
-				createEffect(() => {
-					sig1()
-					runs++
-					assertStatic(() => {
-						savedOwner = getOwner()
-					})
-				})
-			})
-
-			runWithOwner(savedOwner, () => {
-				sig2()
-				assert.strictEqual(_getInternalState().assertedStatic, true)
-				assert.strictEqual(_getInternalState().collectingDependencies, false)
-			})
-
-			assert.strictEqual(runs, 1)
-			sig2(1)
-			assert.strictEqual(runs, 1)
-			sig1(1)
-			assert.strictEqual(runs, 2)
-		})
 	})
 
 	describe("createContext", () => {
@@ -2779,55 +2352,43 @@ describe("@dynein/state", () => {
 	})
 
 	describe("useContext", () => {
-		it("returns the default value if called outside an owner", () => {
+		it("returns the default value if called outside a runWithContext", () => {
 			const ctx = createContext(42)
 
-			runWithOwner(undefined, () => {
-				assert.strictEqual(useContext(ctx), 42)
-			})
-		})
-
-		it("returns the default value if called with a null owner", () => {
-			const ctx = createContext(42)
-
-			runWithOwner(null, () => {
-				assert.strictEqual(useContext(ctx), 42)
-			})
-		})
-
-		it("returns the default value if called with an owner", () => {
-			const ctx = createContext(42)
-
-			const owner = new Owner(null)
-			runWithOwner(owner, () => {
-				assert.strictEqual(useContext(ctx), 42)
-			})
+			assert.strictEqual(useContext(ctx), 42)
 		})
 
 		it("returns undefined if no default value is set", () => {
 			const ctx = createContext()
 
-			const owner = new Owner(null)
+			assert.strictEqual(useContext(ctx), undefined)
+		})
+
+		it("returns assigned undefined even with truthy default", () => {
+			const ctx = createContext("a")
+
+			runWithContext(ctx, undefined, () => {
+				assert.strictEqual(useContext(ctx), undefined)
+			})
+
+			assert.strictEqual(useContext(ctx), "a")
+		})
+
+		it("does not return the value from a saved owner (1)", () => {
+			const ctx = createContext()
+
+			let owner
+			runWithOwner(new Owner(null), () => {
+				runWithContext(ctx, 5, () => {
+					owner = getOwner()
+				})
+			})
 			runWithOwner(owner, () => {
 				assert.strictEqual(useContext(ctx), undefined)
 			})
 		})
 
-		it("returns the value from a saved owner (1)", () => {
-			const ctx = createContext()
-
-			let owner
-			runWithOwner(new Owner(null), () => {
-				runWithContext(ctx, 5, () => {
-					owner = getOwner()
-				})
-			})
-			runWithOwner(owner, () => {
-				assert.strictEqual(useContext(ctx), 5)
-			})
-		})
-
-		it("returns the value from a saved owner (2)", () => {
+		it("does not return the value from a saved owner (2)", () => {
 			const ctx = createContext()
 
 			let owner
@@ -2838,12 +2399,12 @@ describe("@dynein/state", () => {
 			})
 			runWithContext(ctx, 2, () => {
 				runWithOwner(owner, () => {
-					assert.strictEqual(useContext(ctx), 5)
+					assert.strictEqual(useContext(ctx), 2)
 				})
 			})
 		})
 
-		it("handles nested restore from a saved owner", () => {
+		it("does not do nested restore from a saved owner", () => {
 			const ctx = createContext()
 
 			let owner
@@ -2856,60 +2417,17 @@ describe("@dynein/state", () => {
 			runWithContext(ctx, 2, () => {
 				assert.strictEqual(useContext(ctx), 2)
 				runWithOwner(owner, () => {
-					assert.strictEqual(useContext(ctx), 5)
+					assert.strictEqual(useContext(ctx), 2)
 					runWithContext(ctx, 3, () => {
 						assert.strictEqual(useContext(ctx), 3)
 						runWithOwner(owner, () => {
-							assert.strictEqual(useContext(ctx), 5)
+							assert.strictEqual(useContext(ctx), 3)
 						})
 						assert.strictEqual(useContext(ctx), 3)
 					})
-					assert.strictEqual(useContext(ctx), 5)
+					assert.strictEqual(useContext(ctx), 2)
 				})
 				assert.strictEqual(useContext(ctx), 2)
-			})
-		})
-
-		it("returns the value from a saved root owner (1)", () => {
-			const ctx = createContext()
-
-			let owner
-			runWithContext(ctx, 5, () => {
-				owner = getOwner()
-			})
-			runWithOwner(owner, () => {
-				assert.strictEqual(useContext(ctx), 5)
-			})
-		})
-
-		it("returns the value from a saved root owner (2)", () => {
-			const ctx = createContext()
-
-			let owner
-			runWithContext(ctx, 5, () => {
-				owner = getOwner()
-			})
-			runWithContext(ctx, 2, () => {
-				runWithOwner(owner, () => {
-					assert.strictEqual(useContext(ctx), 5)
-				})
-			})
-		})
-
-
-		it("resets to an unset value in a saved owner", () => {
-			const a = createContext()
-			const b = createContext()
-
-			let owner
-			runWithContext(a, 5, () => {
-				owner = getOwner()
-			})
-			runWithContext(b, 2, () => {
-				runWithOwner(owner, () => {
-					assert.strictEqual(useContext(a), 5, "check a")
-					assert.strictEqual(useContext(b), undefined, "check b")
-				})
 			})
 		})
 	})
@@ -2975,6 +2493,221 @@ describe("@dynein/state", () => {
 			})
 
 			assert.strictEqual(result, "a")
+		})
+	})
+
+	describe("context interactions", () => {
+		it("context values are captured by effects", () => {
+			const ctx = createContext("a")
+			const sig = createSignal(0)
+			let log = ""
+
+			createRoot(() => {
+				runWithContext(ctx, "b", () => {
+					createEffect(() => {
+						log += `sig = ${sig()}, ctx = ${useContext(ctx)}; `
+					})
+				})
+			})
+			sig(1)
+			assert.strictEqual(log, "sig = 0, ctx = b; sig = 1, ctx = b; ")
+		})
+
+		it("context values are captured by onWrite", () => {
+			const ctx = createContext("a")
+			const sig = createSignal(0)
+			let log = ""
+
+			createRoot(() => {
+				runWithContext(ctx, "b", () => {
+					onWrite(sig, () => {
+						log += `sig = ${sig()}, ctx = ${useContext(ctx)}; `
+					})
+				})
+			})
+			log += "write 0; "
+			sig(0)
+			log += "write 1; "
+			sig(1)
+
+			assert.strictEqual(log, "write 0; sig = 0, ctx = b; write 1; sig = 1, ctx = b; ")
+		})
+
+		it("context values are captured by onCleanup", () => {
+			const ctx = createContext("a")
+			let log = ""
+
+			const owner = new Owner(null)
+
+			log += useContext(ctx)
+			runWithOwner(owner, () => {
+				log += useContext(ctx)
+				runWithContext(ctx, "b", () => {
+					log += useContext(ctx)
+					onCleanup(() => {
+						log += useContext(ctx)
+					})
+					log += useContext(ctx)
+				})
+				log += useContext(ctx)
+			})
+			log += useContext(ctx)
+
+			owner.destroy()
+
+			assert.strictEqual(log, "aabbaab")
+		})
+
+		it("context values are captured by onCleanup inside effects", () => {
+			const sig = createSignal(0)
+
+			const ctx = createContext("a")
+			let log = ""
+
+			createRoot(() => {
+				runWithContext(ctx, "b", () => {
+					createEffect(() => {
+						const run = `sig = ${sig()}`
+						log += `run effect, sig = ${sig()}; `
+						onCleanup(() => {
+							log += `cleanup run "${run}", ctx = ${useContext(ctx)}; `
+						})
+					})
+				})
+			})
+
+			sig(1)
+			sig(2)
+
+			assert.strictEqual(log, `run effect, sig = 0; cleanup run "sig = 0", ctx = b; run effect, sig = 1; cleanup run "sig = 1", ctx = b; run effect, sig = 2; `)
+		})
+
+		it("owners do not save tracking state", () => {
+			let sig1 = createSignal("a")
+			let sig2 = createSignal("x")
+			let log = ""
+
+			let savedOwner
+
+			createRoot(() => {
+				createEffect(() => {
+					log += `run effect; sig1 = ${sig1()}; `
+					savedOwner = getOwner()
+				})
+			})
+
+			assertStatic(() => {
+				runWithOwner(savedOwner, () => {
+					log += `run with saved owner; sig2 = ${sig2()}, assertedStatic = ${_getInternalState().assertedStatic}, collectingDependencies = ${_getInternalState().collectingDependencies}; `
+				})
+			})
+
+			log += "set sig2 = y; "
+			sig2("y")
+			log += "set sig1 = c; "
+			sig1("c")
+			assert.strictEqual(log, "run effect; sig1 = a; run with saved owner; sig2 = x, assertedStatic = true, collectingDependencies = false; set sig2 = y; set sig1 = c; run effect; sig1 = c; ")
+		})
+
+		it("direct effect returns also do not save tracking state", () => {
+			let sig1 = createSignal("a")
+			let sig2 = createSignal("x")
+			let log = ""
+
+			let effect
+			createRoot(() => {
+				effect = createEffect(() => {
+					log += `run effect; sig1 = ${sig1()}; `
+					sig1()
+				})
+			})
+
+			assertStatic(() => {
+				runWithOwner(effect, () => {
+					log += `run with saved owner; sig2 = ${sig2()}, assertedStatic = ${_getInternalState().assertedStatic}, collectingDependencies = ${_getInternalState().collectingDependencies}; `
+				})
+			})
+
+			log += "set sig2 = y; "
+			sig2("y")
+			log += "set sig1 = c; "
+			sig1("c")
+			assert.strictEqual(log, "run effect; sig1 = a; run with saved owner; sig2 = x, assertedStatic = true, collectingDependencies = false; set sig2 = y; set sig1 = c; run effect; sig1 = c; ")
+		})
+
+		it("restoring owners does not restore the tracking parent", () => {
+			let log = ""
+
+			const sig = createSignal("a")
+			let savedOwner
+
+			createRoot(() => {
+				createEffect(() => {
+					log += "run effect 1; "
+					savedOwner = new Owner()
+				})
+
+				createEffect(() => {
+					log += "run effect 2; "
+					runWithOwner(savedOwner, () => {
+						log += `sig = ${sig()}; `
+					})
+				})
+			})
+
+			log += "set sig = b; "
+			sig("b")
+
+			assert.strictEqual(log, "run effect 1; run effect 2; sig = a; set sig = b; run effect 2; sig = b; ")
+		})
+
+		it("context values are not saved in owners", () => {
+			const ctx = createContext("a")
+			let log = ""
+			log += useContext(ctx) // a
+
+			runWithContext(ctx, "b", () => {
+				log += useContext(ctx) // b
+				let owner
+				runWithContext(ctx, "c", () => {
+					owner = new Owner(null)
+					log += useContext(ctx) // c
+				})
+				log += useContext(ctx) // b (again)
+				runWithOwner(owner, () => {
+					log += useContext(ctx) // b (no runWithContext changed it)
+				})
+				log += useContext(ctx) // still b
+			})
+			log += useContext(ctx) // back to a
+
+			assert.strictEqual(log, "abcbbba")
+		})
+
+		it("context values are not saved in tracking state commands", () => {
+			const ctx = createContext("a")
+			let log = ""
+			log += useContext(ctx)
+
+			createRoot(() => {
+				log += useContext(ctx)
+				runWithContext(ctx, "b", () => {
+					log += useContext(ctx)
+					assertStatic(() => {
+						log += useContext(ctx)
+						runWithContext(ctx, "c", () => {
+							log += useContext(ctx)
+							new Owner(null)
+						})
+						log += useContext(ctx)
+					})
+					log += useContext(ctx)
+				})
+				log += useContext(ctx)
+			})
+			log += useContext(ctx)
+
+			assert.strictEqual(log, "aabbcbbaa")
 		})
 	})
 })

@@ -4,102 +4,72 @@ const isSignalSymbol = Symbol("isSignal")
 let assertedStatic = false
 let collectingDependencies = false
 
-let currentOwner:
-	| Owner
+type ValidCurrentOwnerValue = Owner
 	| null /* root on purpose */
-	| undefined /* root probably not on purpose, so create a warning */ = undefined
+	| undefined /* root probably not on purpose, so create a warning */
 
-type ContextStore = {
-	parent: ContextStore | null
-	values: Map<Context<any>, any>,
-	frozen: boolean
-}
+let currentOwner: ValidCurrentOwnerValue = undefined
+let currentEffect: Effect | undefined = undefined
+let contextValues = new Map<Context<any>, any>()
 
-let contextValues: ContextStore | null = null
+// currentUpdateQueue is also an internal state variable, but it is declared below.
+// There are also custom state variables (also see below)
 
 function updateState<T>(
 	new_assertedStatic: boolean,
 	new_collectingDependencies: boolean,
 	new_currentOwner: Owner | null | undefined,
-	new_contextValues: ContextStore | null,
+	new_currentEffect: Effect | undefined,
 	inner: () => T
 ) {
 	const old_assertedStatic = assertedStatic
 	const old_collectingDependencies = collectingDependencies
 	const old_currentOwner = currentOwner
-	const old_contextValues = contextValues
+	const old_currentEffect = currentEffect
 
 	assertedStatic = new_assertedStatic
 	collectingDependencies = new_collectingDependencies
 	currentOwner = new_currentOwner
-	contextValues = new_contextValues
+	currentEffect = new_currentEffect
 	try {
 		return inner()
 	} finally {
 		assertedStatic = old_assertedStatic
 		collectingDependencies = old_collectingDependencies
 		currentOwner = old_currentOwner
-		contextValues = old_contextValues
+		currentEffect = old_currentEffect
 	}
 }
 
 export function _getInternalState() {
-	return { assertedStatic, collectingDependencies, currentOwner }
+	return { assertedStatic, collectingDependencies, currentOwner, currentEffect, currentUpdateQueue }
 }
 
 export function untrack<T>(inner: () => T): T {
-	return updateState(false, false, currentOwner, contextValues, inner)
+	return updateState(false, false, currentOwner, currentEffect, inner)
 }
 export function retrack<T>(inner: () => T): T {
-	return updateState(assertedStatic, true, currentOwner, contextValues, inner)
+	return updateState(assertedStatic, true, currentOwner, currentEffect, inner)
 }
 
 const sample = untrack
 export { sample }
 
 export function assertStatic<T>(inner: () => T): T {
-	return updateState(true, false, currentOwner, contextValues, inner)
+	return updateState(true, false, currentOwner, currentEffect, inner)
 }
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
-	return updateState(owner?.assertedStatic ?? false, owner?.collectingDependencies ?? false, owner, owner?.contextValues ?? null, inner)
+	return updateState(assertedStatic, collectingDependencies, owner, currentEffect, inner)
 }
 
-// Returns a "restore point" that can be used with runWithOwner to restore the current effect,
-// collectingDependencies, assertedStatic, and contextValues state
 export function getOwner(): Owner | null | undefined {
-	if (!currentOwner) {
-		if (!contextValues) {
-			return currentOwner
-		} else {
-			return new Owner(null)
-		}
-	} else if (currentOwner.collectingDependencies === collectingDependencies && currentOwner.assertedStatic === assertedStatic && contextValues === null) {
-		return currentOwner
-	} else {
-		/* TODO: Maybe change this because it might cause unexpected behavior for .destroy()?
-
-		e.g., with
-
-			innerOwner
-			createEffect(()=>{
-				untrack(()=>{
-					innerOwner = getOwner()
-				})
-			})
-
-		This won't do anything:
-			innerOwner.destroy()
-
-		Could fix this by adding some flag in Owner, like .destroyParentOnDestroyCall
-
-		*/
-		return new Owner(currentOwner)
-	}
+	return currentOwner
 }
+
 export function createRoot<T>(inner: (dispose: () => void) => T): T {
 	// The outer updateState is to set collectingDependencies, assertedStatic, and contextValues before
 	// creating owner.
-	return updateState(false, false, null, null, () => {
+	return updateState(false, false, null, currentEffect, () => {
 		const owner = new Owner(null)
 		return runWithOwner(owner, () => inner(() => owner.destroy()))
 	})
@@ -116,56 +86,19 @@ export function createContext(defaultValue?: any): Context<any> {
 }
 
 export function runWithContext<T, R>(context: Context<T>, value: T, inner: () => R): R {
-	const old_contextValues = contextValues
-
-	let createdNewContext = false
-	if (!contextValues || contextValues.frozen) {
-		createdNewContext = true
-		contextValues = {
-			parent: contextValues,
-			values: new Map(),
-			frozen: false
-		}
+	const oldHas = contextValues.has(context)
+	let oldValue
+	if (oldHas) {
+		oldValue = contextValues.get(context)
 	}
-
-	const old_hasValue = contextValues!.values.has(context)
-	const old_value = contextValues!.values.get(context)
-
-	contextValues!.values.set(context, value)
+	contextValues.set(context, value)
 	try {
 		return inner()
 	} finally {
-		// So we created a new contextValues up above. The only thing remaining in this contextValues
-		// should just be our value. We can just pop back to old_contextValues.
-		//
-		// (Notice we can't just do contextValues !== old_contextValues. We need the createdNewContext
-		//  variable because of the on-pop create context code below.)
-		if (createdNewContext) {
-			contextValues = old_contextValues
+		if (!oldHas) {
+			contextValues.delete(context)
 		} else {
-			// If we get here, then we either reused the old contextValues and modified it, or else
-			// the create context on pop code ran somewhere in inner()
-
-			// If the state is frozen, it must have been frozen by a stashAllState call inside.
-			// Just make a clone of it.
-			if (contextValues!.frozen) {
-				contextValues = {
-					parent: contextValues!.parent,
-					values: new Map(contextValues!.values),
-					frozen: false
-				}
-			}
-
-			// If it isn't frozen (or we just un-freezed it by creating a clone), just reset it
-			if (!old_hasValue) {
-				contextValues!.values.delete(context)
-			} else {
-				contextValues!.values.set(context, old_value)
-			}
-
-			// And notice there's no need for a contextValues = old_contextValues here, since
-			// we know it will either be identical to begin with, or we just created a
-			// new contextValues, or the code inside inner did
+			contextValues.set(context, oldValue)
 		}
 	}
 }
@@ -182,13 +115,22 @@ export function saveContexts(contexts: Context<any>[]): <T>(inner: () => T) => T
 	return restoreContexts
 }
 
-export function useContext<T>(context: Context<T>): T {
-	let ctx: ContextStore | null = contextValues
-	while (ctx) {
-		if (ctx.values?.has(context)) {
-			return ctx.values!.get(context)
+export function saveAllContexts(): <T>(inner: () => T) => T {
+	const savedContextValues = new Map(contextValues)
+	return ((inner) => {
+		const oldContextValues = contextValues
+		try {
+			contextValues = savedContextValues
+			return inner()
+		} finally {
+			contextValues = oldContextValues
 		}
-		ctx = ctx.parent
+	})
+}
+
+export function useContext<T>(context: Context<T>): T {
+	if (contextValues.has(context)) {
+		return contextValues.get(context)
 	}
 
 	return context.defaultValue
@@ -203,34 +145,23 @@ export interface Destructable {
 // are added to this object so that the owners will never be garbage collected.
 const rootOwners = new Set<any>()
 
-///*DEBUG*/let debugIDCounter = 0;
+///*DEBUG*/let debugIDCounter = 0
 // A simple tree for destroying all descendant contexts when an ancestor is destroyed
 export class Owner implements Destructable {
-	///*DEBUG*/debugID: string;
+	///*DEBUG*/debugID: string
 	protected children: Set<Destructable> = new Set();
 	readonly isDestroyed: boolean = false;
 	parent: Owner | null = null;
-
-	readonly assertedStatic: boolean
-	readonly collectingDependencies: boolean
-	readonly contextValues: ContextStore | null
 
 	///*DEBUG*/protected createContext: any
 	///*DEBUG*/protected destroyContext: any
 
 	constructor(parent: Owner | null | undefined = currentOwner) {
-		///*DEBUG*/this.debugID = (debugIDCounter++).toString();
+		///*DEBUG*/this.debugID = (debugIDCounter++).toString()
 
 		///*DEBUG*/this.createContext = new Error(`Create Owner@${this.debugID}`)
 
-		this.assertedStatic = assertedStatic
-		this.collectingDependencies = collectingDependencies
-		this.contextValues = contextValues
-		if (contextValues) {
-			contextValues.frozen = true
-		}
-
-		///*DEBUG*/console.trace(`Owner@${this.debugID}: create`);
+		///*DEBUG*/console.trace(`Owner@${this.debugID}: create`)
 		if (parent === undefined) {
 			console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 		}
@@ -243,10 +174,10 @@ export class Owner implements Destructable {
 	}
 
 	addChild(thing: Destructable) {
-		///*DEBUG*/console.log(`Owner@${this.debugID}: add child`, thing);
+		///*DEBUG*/console.log(`Owner@${this.debugID}: add child`, thing)
 		if (this.isDestroyed) {
 			///*DEBUG*/console.log(this.createContext, this.destroyContext)
-			///*DEBUG*/throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`);
+			///*DEBUG*/throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`)
 			throw new Error("Can't add to destroyed context.")
 		}
 		thing.parent = this
@@ -255,7 +186,7 @@ export class Owner implements Destructable {
 
 	destroy() {
 		///*DEBUG*/this.destroyContext = new Error(`Destroy Owner@${this.debugID}`)
-		///*DEBUG*/console.log(`Owner@${this.debugID}: destroy`);
+		///*DEBUG*/console.log(`Owner@${this.debugID}: destroy`)
 
 		//@ts-ignore
 		this.isDestroyed = true
@@ -267,7 +198,7 @@ export class Owner implements Destructable {
 	}
 
 	reset() {
-		///*DEBUG*/console.log(`Owner@${this.debugID}: reset`);
+		///*DEBUG*/console.log(`Owner@${this.debugID}: reset`)
 		const children = this.children
 
 		// if one of the child destructors triggers `reset` again, we don't
@@ -282,10 +213,14 @@ export class Owner implements Destructable {
 }
 
 export type Signal<T> = (() => T) & (<U extends T>(newVal: U) => U) & { [isSignalSymbol]: true }
+
+// Every ReadableSignal is also a Signal at runtime, but declaring or casting a Signal to a ReadableSignal
+// indicates to other functions that it shouldn't be written to.
 export type ReadableSignal<T> = (() => T) & { [isSignalSymbol]: true }
 
-const onWriteListenersSymbol = Symbol("onWriteListeners")
-const onWriteOwnersSymbol = Symbol("onWriteOwners")
+const onWriteListenersFunctionsSymbol = Symbol("onWriteListeners")
+const onWriteListenersOwnersSymbol = Symbol("onWriteOwners")
+const onWriteListenersContextValuesSymbol = Symbol("onWriteContextValues")
 export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal<T> {
 	const signalWrapper = function (newVal?: T) {
 		if (arguments.length === 0) {
@@ -299,61 +234,97 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 			}
 			setter(newVal!)
 			//@ts-ignore
-			if (signalWrapper[onWriteListenersSymbol] && signalWrapper[onWriteListenersSymbol].size > 0) {
-				runWithBaseStateButKeepUpdateQueue(() => {
-					batch(() => {
+			if (signalWrapper[onWriteListenersFunctionsSymbol].length > 0) {
+				assertedStatic = false
+				collectingDependencies = false
+				for (const fn of customRestoreBaseStateFunctions) {
+					fn()
+				}
+				const old_currentOwner = currentOwner
+				const old_currentEffect = currentEffect
+				const old_contextValues = contextValues
+
+				// Notice that currentUpdateQueue is preserved while all the other state values are reset
+				// to the base values (as if run in the root event loop), or else to the values saved
+				// when the onWrite was created.
+				batch(() => {
+					currentEffect = undefined
+
+					//@ts-ignore
+					for (let i = 0; i < signalWrapper[onWriteListenersOwnersSymbol].length; i++) {
 						//@ts-ignore
-						for (const owner of signalWrapper[onWriteOwnersSymbol]) {
-							owner.reset()
-						}
+						const owner: Owner = signalWrapper[onWriteListenersOwnersSymbol][i]
+
+						// this cannot be null or undefined because a new owner is created for
+						// every onWrite
+						owner.reset()
+					}
+					// @ts-ignore
+					for (let i = 0; i < signalWrapper[onWriteListenersFunctionsSymbol].length; i++) {
 						//@ts-ignore
-						for (const listener of signalWrapper[onWriteListenersSymbol]) {
-							try {
-								listener(newVal!)
-							} catch (err) {
-								console.warn("Caught error in onWrite listener:", err)
-							}
+						const owner: Owner = signalWrapper[onWriteListenersOwnersSymbol][i]
+
+						// this cannot be null or undefined because a new owner is created for
+						// every onWrite
+						currentOwner = owner
+
+						//@ts-ignore
+						const listener = signalWrapper[onWriteListenersFunctionsSymbol][i]
+
+						//@ts-ignore
+						contextValues = signalWrapper[onWriteListenersContextValuesSymbol][i]
+
+						try {
+							listener(newVal!)
+						} catch (err) {
+							console.warn("Caught error in onWrite listener:", err)
 						}
-					})
+					}
 				})
+
+				currentOwner = old_currentOwner
+				currentEffect = old_currentEffect
+				contextValues = old_contextValues
 			}
-			return newVal!
 		}
+		return newVal!
 	} as Signal<T>
 	//@ts-ignore
 	signalWrapper[isSignalSymbol] = true
 
-	// TODO: should we set signalWrapper[onWriteListenersSymbol] and onWriteOwnersSymbol to null here to reduce polymorphism?
+	//@ts-ignore
+	signalWrapper[onWriteListenersFunctionsSymbol] = []
+	//@ts-ignore
+	signalWrapper[onWriteListenersOwnersSymbol] = []
+	//@ts-ignore
+	signalWrapper[onWriteListenersContextValuesSymbol] = []
 
 	//@ts-ignore
 	return signalWrapper
 }
 
 export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) => void): void {
-	//@ts-ignore
-	if (!getter[onWriteListenersSymbol]) {
-		//@ts-ignore
-		getter[onWriteListenersSymbol] = new Set()
-		//@ts-ignore
-		getter[onWriteOwnersSymbol] = new Set()
-	}
-
 	const owner = new Owner()
-	const wrappedListener = (val: T) => {
-		updateState(false, false, owner, owner.contextValues, () => {
-			listener(val)
-		})
-	}
 
 	//@ts-ignore
-	getter[onWriteListenersSymbol].add(wrappedListener)
+	getter[onWriteListenersFunctionsSymbol].push(listener)
 	//@ts-ignore
-	getter[onWriteOwnersSymbol].add(owner)
+	getter[onWriteListenersOwnersSymbol].push(owner)
+	//@ts-ignore
+	getter[onWriteListenersContextValuesSymbol].push(new Map(contextValues))
 	onCleanup(() => {
 		//@ts-ignore
-		getter[onWriteListenersSymbol].delete(wrappedListener)
-		//@ts-ignore
-		getter[onWriteOwnersSymbol].delete(owner)
+		const idx = getter[onWriteListenersFunctionsSymbol].indexOf(listener)
+		if (idx === -1) {
+			console.warn("Unexpected internal state in onWrite listener cleanup")
+		}
+
+		// @ts-ignore
+		getter[onWriteListenersFunctionsSymbol].splice(idx, 1)
+		// @ts-ignore
+		getter[onWriteListenersOwnersSymbol].splice(idx, 1)
+		// @ts-ignore
+		getter[onWriteListenersContextValuesSymbol].splice(idx, 1)
 	})
 }
 
@@ -405,30 +376,26 @@ export function onCleanup(fn: () => void) {
 	if (currentOwner === undefined) {
 		console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 	}
+
+	const savedContextValues = new Map(contextValues)
 	currentOwner?.addChild({
 		destroy: () => {
+			const old_contextValues = contextValues
 			try {
+				contextValues = savedContextValues
 				runWithOwner(undefined, fn)
 			} catch (err) {
 				console.warn("Caught error in cleanup function:", err)
+			} finally {
+				contextValues = old_contextValues
 			}
-		}, parent: null
+		},
+		parent: null
 	})
 }
 
 export function batch(fn: () => void) {
 	currentUpdateQueue.delayStart(fn)
-}
-
-export function schedule(fn: () => void) {
-	currentUpdateQueue.schedule(() => {
-		runWithBaseStateButKeepUpdateQueue(fn)
-	})
-}
-
-export function onBatchEnd(fn: () => void) {
-	currentUpdateQueue.onTickEnd.add(fn)
-	currentUpdateQueue.start()
 }
 
 export function subclock(fn: () => void) {
@@ -488,16 +455,39 @@ class UpdateQueue {
 				if (this.onTickEnd.size === 0) {
 					break
 				}
-				runWithBaseStateButKeepUpdateQueue(() => {
-					for (const fn of this.onTickEnd) {
-						this.onTickEnd.delete(fn)
-						try {
-							fn()
-						} catch (err) {
-							console.warn("Caught error in onBatchEnd function:", err)
-						}
+				const old_assertedStatic = assertedStatic
+				const old_collectingDependencies = collectingDependencies
+				const old_currentOwner = currentOwner
+				const old_currentEffect = currentEffect
+				const old_contextValues = contextValues
+				const restoreCustomStates = customStateStashers.map(stasher => stasher())
+
+				assertedStatic = false
+				collectingDependencies = false
+				currentOwner = undefined
+				contextValues = new Map()
+				for (const fn of customRestoreBaseStateFunctions) {
+					fn()
+				}
+
+				for (const fn of this.onTickEnd) {
+					this.onTickEnd.delete(fn)
+					try {
+						fn()
+					} catch (err) {
+						console.warn("Caught error in onBatchEnd function:", err)
 					}
-				})
+				}
+
+				assertedStatic = old_assertedStatic
+				collectingDependencies = old_collectingDependencies
+				currentOwner = old_currentOwner
+				currentEffect = old_currentEffect
+				contextValues = old_contextValues
+				for (const fn of restoreCustomStates) {
+					fn()
+				}
+
 				continue // the onTickEnd functions might have added more stuff to nextTick
 			}
 
@@ -514,12 +504,20 @@ class UpdateQueue {
 	}
 
 	subclock(fn: () => void) {
+		const old_assertedStatic = assertedStatic
+		const old_collectingDependencies = collectingDependencies
+
 		const oldUpdateQueue = currentUpdateQueue
 		currentUpdateQueue = new UpdateQueue(this)
+		assertedStatic = false
+		collectingDependencies = false
+
 		try {
 			fn()
 		} finally {
 			currentUpdateQueue = oldUpdateQueue
+			assertedStatic = old_assertedStatic
+			collectingDependencies = old_collectingDependencies
 		}
 	}
 
@@ -558,20 +556,18 @@ let currentUpdateQueue = new UpdateQueue()
 // Internal class created by createEffect. Collects dependencies of `fn` and rexecutes `fn` when
 // dependencies update.
 class Effect extends Owner {
-	private readonly fn: () => (void | Promise<void>)
+	private readonly fn: () => void | Promise<void>
+	private readonly savedContextValues: Map<Context<any>, any>
 	readonly sources: Set<DependencyHandler<any>>
 	private readonly boundExec: () => void
-	private executing: boolean = false;
-	private destroyPending: boolean = false;
+	private executing: boolean = false
+	private destroyPending: boolean = false
 	private asyncExec: boolean = false
 	private schedulePending: boolean = false
 
 	constructor(fn: () => (void | Promise<void>)) {
 		super()
-		//@ts-ignore
-		this.assertedStatic = false
-		//@ts-ignore
-		this.collectingDependencies = true
+		this.savedContextValues = new Map(contextValues)
 		this.fn = fn.bind(undefined)
 		this.sources = new Set()
 		this.boundExec = this.exec.bind(this)
@@ -588,9 +584,12 @@ class Effect extends Owner {
 			src.drains.delete(this)
 		}
 		this.sources.clear()
+
+		const oldContextValues = contextValues
 		try {
 			this.executing = true
-			const maybePromise = updateState(false, true, this, this.contextValues, this.fn)
+			contextValues = this.savedContextValues
+			const maybePromise = updateState(false, true, this, this, this.fn)
 			this.asyncExec = maybePromise instanceof Promise
 			if (this.asyncExec) {
 				(maybePromise as any).finally(() => {
@@ -598,6 +597,7 @@ class Effect extends Owner {
 				})
 			}
 		} finally {
+			contextValues = oldContextValues
 			if (!this.asyncExec) {
 				this.finishExec()
 			}
@@ -633,10 +633,6 @@ class Effect extends Owner {
 	}
 }
 
-function findParentEffect(c: Owner | null | undefined): Effect | null | undefined {
-	return c && (c instanceof Effect ? c : findParentEffect(c.parent))
-}
-
 class DependencyHandler<T> {
 	value: T
 	drains: Set<Effect>
@@ -649,10 +645,9 @@ class DependencyHandler<T> {
 	}
 
 	read(): T {
-		const currentComputation = findParentEffect(currentOwner)
-		if (collectingDependencies && currentComputation) {
-			currentComputation.sources.add(this)
-			this.drains.add(currentComputation)
+		if (collectingDependencies && currentEffect) {
+			currentEffect.sources.add(this)
+			this.drains.add(currentEffect)
 		} else if (assertedStatic) {
 			console.error("Looks like you might have wanted to add a dependency but didn't.")
 		}
@@ -673,91 +668,75 @@ class DependencyHandler<T> {
 	}
 }
 
-type StateStasher = () => (() => void)
-
-const stateStashers = new Set<StateStasher>()
-const stashAllState: StateStasher = () => {
-	const restorers: (() => void)[] = []
-	for (const getRestorer of stateStashers) {
-		restorers.push(getRestorer())
-	}
-	return () => {
-		for (const restorer of restorers) {
-			restorer()
-		}
-	}
-}
-
-let basicRestoreBaseState = () => { }
-const restoreBaseState = () => {
-	basicRestoreBaseState()
-	currentUpdateQueue.start()
-}
-
 const rootUpdateQueue = currentUpdateQueue
-export function runWithBaseState<T>(inner: () => T): T {
-	const old_rootUpdateQueue_startDelayed = rootUpdateQueue.startDelayed
-	const restore = stashAllState()
-	try {
-		basicRestoreBaseState()
-		rootUpdateQueue.startDelayed = old_rootUpdateQueue_startDelayed
-		return inner()
-	} finally {
-		restore()
-	}
+
+type StateStasher = () => (() => void)
+const customStateStashers: StateStasher[] = []
+const customRestoreBaseStateFunctions: (() => void)[] = []
+
+export function addCustomStateStasher(stateStasher: StateStasher) {
+	customStateStashers.push(stateStasher)
+	customRestoreBaseStateFunctions.push(stateStasher())
 }
 
-function runWithBaseStateButKeepUpdateQueue(inner: () => void) {
-	const old_currentUpdateQueue = currentUpdateQueue
-	runWithBaseState(() => {
-		currentUpdateQueue = old_currentUpdateQueue
-		inner()
-	})
-}
-
-export function addStateStasher(stasher: StateStasher) {
-	stateStashers.add(stasher)
-	basicRestoreBaseState = stashAllState()
-}
-
-addStateStasher(() => {
+function stashAllState() {
 	const old_assertedStatic = assertedStatic
 	const old_collectingDependencies = collectingDependencies
 	const old_currentOwner = currentOwner
-	const old_contextValues = contextValues
-	if (contextValues) {
-		contextValues.frozen = true
-	}
+	const old_currentEffect = currentEffect
+	const old_contextValues = new Map(contextValues)
 
 	const old_currentUpdateQueue = currentUpdateQueue
 	const old_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
+
+	const restoreCustomStates = customStateStashers.map(stasher => stasher())
 
 	return () => {
 		assertedStatic = old_assertedStatic
 		collectingDependencies = old_collectingDependencies
 		currentOwner = old_currentOwner
+		currentEffect = old_currentEffect
 		contextValues = old_contextValues
 		currentUpdateQueue = old_currentUpdateQueue
 		currentUpdateQueue.startDelayed = old_currentUpdateQueue_startDelayed
+
+		for (const fn of restoreCustomStates) {
+			fn()
+		}
 	}
-})
+}
 
 export function $s<T>(promise: Promise<T>): Promise<T> {
 	const restore = stashAllState()
-	promise.finally(() => {
-		///*DEBUG*/console.log("$s restore saved state")
-		restore()
+	promise
+		.finally(() => {
+			///*DEBUG*/console.log("$s restore saved state")
+			restore()
 
-		// TODO: Should maybe use process.nextTick in node, since process.nextTick runs before
-		// microtasks, and thus code in process.nextTick will have state leakage.
-		// See: https://stackoverflow.com/a/57325561
+			// TODO: Should maybe use process.nextTick in node, since process.nextTick runs before
+			// microtasks, and thus code in process.nextTick will have state leakage.
+			// See: https://stackoverflow.com/a/57325561
 
-		//@ts-ignore
-		queueMicrotask(() => {
-			///*DEBUG*/console.log("restore base state")
-			restoreBaseState()
+			//@ts-ignore
+			queueMicrotask(() => {
+				///*DEBUG*/console.log("restore base state")
+
+				// Really restore *everything*, because this is returning control to the main event
+				// loop, and leaving a Dynein-wrapped code block.
+				assertedStatic = false
+				collectingDependencies = false
+				currentOwner = undefined
+				currentEffect = undefined
+				contextValues = new Map()
+				currentUpdateQueue = rootUpdateQueue
+				rootUpdateQueue.startDelayed = false
+				rootUpdateQueue.start()
+				for (const fn of customRestoreBaseStateFunctions) {
+					fn()
+				}
+			})
 		})
-	}).catch(() => { })
+		.catch(() => { })
 	return promise
 }
 

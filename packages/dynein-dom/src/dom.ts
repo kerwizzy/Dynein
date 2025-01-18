@@ -1,4 +1,4 @@
-import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, addStateStasher } from "@dynein/state"
+import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, addCustomStateStasher } from "@dynein/state"
 
 type Primitive = string | number | boolean | undefined | null
 
@@ -93,7 +93,7 @@ let insertTarget: Node | null = null
 let insertBeforeNode: Node | null = null
 let insertDisabled: boolean = false
 
-addStateStasher(() => {
+addCustomStateStasher(() => {
 	const old_insertTarget = insertTarget
 	const old_insertBeforeNode = insertBeforeNode
 	const old_insertDisabled = insertDisabled
