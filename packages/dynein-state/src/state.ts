@@ -170,22 +170,17 @@ export function useContext<T>(context: Context<T>): T {
 	return context.defaultValue
 }
 
-export interface Destructable {
-	destroy(): void
-	parent: Owner | null
-}
-
 // Any owners created as root (i.e., with `parent` null or undefined)
 // are added to this object so that the owners will never be garbage collected.
 const rootOwners = new Set<any>()
 
 ///*DEBUG*/let debugIDCounter = 0
 // A simple tree for destroying all descendant contexts when an ancestor is destroyed
-export class Owner implements Destructable {
+export class Owner {
 	///*DEBUG*/debugID: string
-	protected children: Set<Destructable> = new Set();
+	protected children: Set<Owner | (() => void)> = new Set()
 	readonly isDestroyed: boolean = false;
-	parent: Owner | null = null;
+	protected parent: Owner | null = null;
 
 	///*DEBUG*/protected createContext: any
 	///*DEBUG*/protected destroyContext: any
@@ -207,14 +202,16 @@ export class Owner implements Destructable {
 		}
 	}
 
-	addChild(thing: Destructable) {
+	private addChild(thing: Owner | (() => void)) {
 		///*DEBUG*/console.log(`Owner@${this.debugID}: add child`, thing)
 		if (this.isDestroyed) {
 			///*DEBUG*/console.log(this.createContext, this.destroyContext)
 			///*DEBUG*/throw new Error(`Owner@${this.debugID}: Can't add to destroyed context.`)
 			throw new Error("Can't add to destroyed context.")
 		}
-		thing.parent = this
+		if (thing instanceof Owner) {
+			thing.parent = this
+		}
 		this.children.add(thing)
 	}
 
@@ -240,8 +237,12 @@ export class Owner implements Destructable {
 		this.children = new Set()
 
 		for (const child of children) {
-			child.parent = null
-			child.destroy()
+			if (child instanceof Owner) {
+				child.parent = null
+				child.destroy()
+			} else {
+				child()
+			}
 		}
 	}
 }
@@ -381,11 +382,11 @@ export function isSignal(thing: any): thing is Signal<any> {
 	return thing && thing[isSignalSymbol] === true
 }
 
-export function createEffect(fn: () => (void | Promise<void>)): Destructable {
+export function createEffect(fn: () => (void | Promise<void>)): Owner {
 	return new Effect(fn)
 }
 
-export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Destructable {
+export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Owner {
 	let isFirst = true
 	return createEffect(() => {
 		const newValue = signal()
@@ -412,19 +413,19 @@ export function onCleanup(fn: () => void) {
 	}
 
 	const savedContextValues = new Map(contextValues)
-	currentOwner?.addChild({
-		destroy: () => {
-			const old_contextValues = contextValues
-			try {
-				contextValues = savedContextValues
-				runWithOwner(undefined, fn)
-			} catch (err) {
-				console.warn("Caught error in cleanup function:", err)
-			} finally {
-				contextValues = old_contextValues
-			}
-		},
-		parent: null
+
+	// Do the ts-ignore to get around the private method warning
+	//@ts-ignore
+	currentOwner?.addChild(() => {
+		const old_contextValues = contextValues
+		try {
+			contextValues = savedContextValues
+			runWithOwner(undefined, fn)
+		} catch (err) {
+			console.warn("Caught error in cleanup function:", err)
+		} finally {
+			contextValues = old_contextValues
+		}
 	})
 }
 
