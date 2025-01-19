@@ -1,6 +1,37 @@
 const isSignalSymbol = Symbol("isSignal")
 
 // Internal state variables
+/*
+
+Meaning of various states
+=========================
+
+assertedStatic = false, collectingDependencies = false
+	* inside an untrack or entirely outside a createEffect
+	* accessing signals does nothing (aside from returning the current signal value)
+
+assertedStatic = true, collectingDependencies = false
+	* inside an untrack or entirely outside a createEffect
+	* accessing signals causes a warning
+
+assertedStatic = false, collectingDependencies = true
+	* inside a createEffect or a retrack
+	* accessing signals adds the signal as a dependency of the effect
+
+assertedStatic = true, collectingDependencies = true
+	* inside a createEffect or a retrack
+	* accessing signals triggers a warning
+	* The signal is *not* added as a dependency of the effect.
+	* (There isn't really a good reason for this situation to appear, but for the sake of something
+	   like defense-in-depth for bugs, it's specified here and handled below in DependencyHandler.read)
+
+In other words:
+	assertStatic = true               causes accessing signals to do nothing except trigger a warning
+	collectingDependencies = false    causes accessing signals to do nothing, but without a warning
+
+Other notes:
+	The situation `collectingDependencies && currentEffect` can occur if retrack is called outside an effect
+*/
 let assertedStatic = false
 let collectingDependencies = false
 
@@ -49,6 +80,7 @@ export function untrack<T>(inner: () => T): T {
 	return updateState(false, false, currentOwner, currentEffect, inner)
 }
 export function retrack<T>(inner: () => T): T {
+	// Preserve assertedStatic in case this is called outside an untrack
 	return updateState(assertedStatic, true, currentOwner, currentEffect, inner)
 }
 
@@ -645,7 +677,7 @@ class DependencyHandler<T> {
 	}
 
 	read(): T {
-		if (collectingDependencies && currentEffect) {
+		if (collectingDependencies && currentEffect && !assertedStatic) {
 			currentEffect.sources.add(this)
 			this.drains.add(currentEffect)
 		} else if (assertedStatic) {

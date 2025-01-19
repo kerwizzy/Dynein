@@ -1937,6 +1937,8 @@ describe("@dynein/state", () => {
 			assert.strictEqual(count, 1)
 		})
 
+		// IMPORTANT! if this test does not pass, it may cause other tests here to pass incorrectly,
+		// because they contain asserts inside the untrack which they expect to propogate up to the it()
 		it("passes errors", () => {
 			assert.throws(() => {
 				untrack(() => {
@@ -2021,7 +2023,7 @@ describe("@dynein/state", () => {
 	})
 
 	describe("retrack", () => {
-		it("sets internalState.collectingDependencies", () => {
+		it("sets internalState.collectingDependencies (even outside of an effect)", () => {
 			untrack(() => {
 				retrack(() => {
 					assert.strictEqual(_getInternalState().collectingDependencies, true)
@@ -2037,9 +2039,17 @@ describe("@dynein/state", () => {
 			})
 		})
 
-		it("does not set internalState.assertedStatic", () => {
+		it("does not set internalState.assertedStatic (1)", () => {
 			retrack(() => {
 				assert.strictEqual(_getInternalState().assertedStatic, false)
+			})
+		})
+
+		it("does not set internalState.assertedStatic (2)", () => {
+			assertStatic(() => {
+				retrack(() => {
+					assert.strictEqual(_getInternalState().assertedStatic, true)
+				})
 			})
 		})
 
@@ -2089,16 +2099,37 @@ describe("@dynein/state", () => {
 	})
 
 	describe("assertStatic", () => {
-		it("sets internalState.collectingDependencies", () => {
-			assertStatic(() => {
-				assert.strictEqual(_getInternalState().collectingDependencies, false)
+		it("blocks dependency collection", () => {
+			let count = 0
+			let signal = createSignal(0)
+			createRoot(() => {
+				createEffect(() => {
+					count++
+					assertStatic(() => {
+						signal()
+					})
+				})
 			})
+			assert.strictEqual(count, 1)
+			signal(1)
+			assert.strictEqual(count, 1)
 		})
 
 		it("sets internalState.assertedStatic", () => {
 			assertStatic(() => {
 				assert.strictEqual(_getInternalState().assertedStatic, true)
 			})
+		})
+
+		it("sets internalState.collectingDependencies", () => {
+			let val = "NOT RUN"
+			createEffect(() => {
+				assertStatic(() => {
+					val = _getInternalState().collectingDependencies
+				})
+			})
+
+			assert.strictEqual(val, false)
 		})
 	})
 
