@@ -152,7 +152,9 @@ export function saveAllContexts(): <T>(inner: () => T) => T {
 	return ((inner) => {
 		const oldContextValues = contextValues
 		try {
-			contextValues = savedContextValues
+			// The extra clone here is required to handle restores within restores (see the
+			// "handles restores inside restores" test).
+			contextValues = new Map(savedContextValues)
 			return inner()
 		} finally {
 			contextValues = oldContextValues

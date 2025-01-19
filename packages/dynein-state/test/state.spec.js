@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, runWithContext, ReactiveArray } from "../built/state.js"
+import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray } from "../built/state.js"
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -2524,6 +2524,194 @@ describe("@dynein/state", () => {
 			})
 
 			assert.strictEqual(result, "a")
+		})
+	})
+
+	describe("saveContexts", () => {
+		it("saves contexts", () => {
+			const ctxA = createContext()
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveContexts([ctxA, ctxB])
+				})
+			})
+
+			let restoredA = "NOT RUN"
+			let restoredB = "NOT RUN"
+			restore(() => {
+				restoredA = useContext(ctxA)
+				restoredB = useContext(ctxB)
+			})
+
+			assert.strictEqual(restoredA, "a")
+			assert.strictEqual(restoredB, "b")
+		})
+
+		it("restores inside contexts", () => {
+			const ctxA = createContext()
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveContexts([ctxA, ctxB])
+				})
+			})
+
+			let restoredA = "NOT RUN"
+			let restoredB = "NOT RUN"
+			runWithContext(ctxA, 0, () => {
+				runWithContext(ctxB, 1, () => {
+					restore(() => {
+						restoredA = useContext(ctxA)
+						restoredB = useContext(ctxB)
+					})
+				})
+			})
+
+			assert.strictEqual(restoredA, "a")
+			assert.strictEqual(restoredB, "b")
+		})
+
+		it("handles restores inside restores", () => {
+			const ctxA = createContext("u")
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveContexts([ctxA, ctxB])
+				})
+			})
+
+			let log = ""
+
+			log += useContext(ctxA) // u
+			runWithContext(ctxA, "x", () => {
+				runWithContext(ctxB, "y", () => {
+					restore(() => {
+						log += useContext(ctxA) // a (restored)
+						log += useContext(ctxB) // b (restored)
+						runWithContext(ctxA, 0, () => {
+							log += useContext(ctxA) // 0
+							restore(() => {
+								log += useContext(ctxA) // a (restored)
+								log += useContext(ctxB) // b (still the same)
+							})
+							log += useContext(ctxA) // 0
+						})
+						log += useContext(ctxA) // a
+						log += useContext(ctxB) // b
+						restore(() => {
+							log += useContext(ctxA) // a
+							log += useContext(ctxB) // b
+						})
+						log += useContext(ctxA) // a
+						log += useContext(ctxB) // b
+					})
+				})
+				log += useContext(ctxA) // x
+			})
+			log += useContext(ctxA) // u
+
+			assert.strictEqual(log, "uab0ab0abababxu")
+		})
+	})
+
+	describe("saveAllContexts", () => {
+		it("saves contexts", () => {
+			const ctxA = createContext()
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveAllContexts()
+				})
+			})
+
+			let restoredA = "NOT RUN"
+			let restoredB = "NOT RUN"
+			restore(() => {
+				restoredA = useContext(ctxA)
+				restoredB = useContext(ctxB)
+			})
+
+			assert.strictEqual(restoredA, "a")
+			assert.strictEqual(restoredB, "b")
+		})
+
+		it("restores inside contexts", () => {
+			const ctxA = createContext()
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveAllContexts()
+				})
+			})
+
+			let restoredA = "NOT RUN"
+			let restoredB = "NOT RUN"
+			runWithContext(ctxA, 0, () => {
+				runWithContext(ctxB, 1, () => {
+					restore(() => {
+						restoredA = useContext(ctxA)
+						restoredB = useContext(ctxB)
+					})
+				})
+			})
+
+			assert.strictEqual(restoredA, "a")
+			assert.strictEqual(restoredB, "b")
+		})
+
+		it("handles restores inside restores", () => {
+			const ctxA = createContext("u")
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveAllContexts()
+				})
+			})
+
+			let log = ""
+
+			log += useContext(ctxA) // u
+			runWithContext(ctxA, "x", () => {
+				runWithContext(ctxB, "y", () => {
+					restore(() => {
+						log += useContext(ctxA) // a (restored)
+						log += useContext(ctxB) // b (restored)
+						runWithContext(ctxA, 0, () => {
+							log += useContext(ctxA) // 0
+							restore(() => {
+								log += useContext(ctxA) // a (restored)
+								log += useContext(ctxB) // b (still the same)
+							})
+							log += useContext(ctxA) // 0
+						})
+						log += useContext(ctxA) // a
+						log += useContext(ctxB) // b
+						restore(() => {
+							log += useContext(ctxA) // a
+							log += useContext(ctxB) // b
+						})
+						log += useContext(ctxA) // a
+						log += useContext(ctxB) // b
+					})
+				})
+				log += useContext(ctxA) // x
+			})
+			log += useContext(ctxA) // u
+
+			assert.strictEqual(log, "uab0ab0abababxu")
 		})
 	})
 
