@@ -1503,6 +1503,51 @@ describe("@dynein/state", () => {
 
 			assert.strictEqual(log, "undefined a b c c b d b b e b a undefined ")
 		})
+
+		// this duplicates a test from saveAllContexts
+		it("handles restores inside restores", () => {
+			const ctxA = createContext("u")
+			const ctxB = createContext()
+
+			let restore
+			runWithContext(ctxA, "a", () => {
+				runWithContext(ctxB, "b", () => {
+					restore = saveAllState()
+				})
+			})
+
+			let log = ""
+
+			log += useContext(ctxA) // u
+			runWithContext(ctxA, "x", () => {
+				runWithContext(ctxB, "y", () => {
+					restore(() => {
+						log += useContext(ctxA) // a (restored)
+						log += useContext(ctxB) // b (restored)
+						runWithContext(ctxA, 0, () => {
+							log += useContext(ctxA) // 0
+							restore(() => {
+								log += useContext(ctxA) // a (restored)
+								log += useContext(ctxB) // b (still the same)
+							})
+							log += useContext(ctxA) // 0
+						})
+						log += useContext(ctxA) // a
+						log += useContext(ctxB) // b
+						restore(() => {
+							log += useContext(ctxA) // a
+							log += useContext(ctxB) // b
+						})
+						log += useContext(ctxA) // a
+						log += useContext(ctxB) // b
+					})
+				})
+				log += useContext(ctxA) // x
+			})
+			log += useContext(ctxA) // u
+
+			assert.strictEqual(log, "uab0ab0abababxu")
+		})
 	})
 
 	describe("onUpdate", () => {
@@ -2670,6 +2715,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(restoredB, "b")
 		})
 
+		// this test also appears in saveAllState
 		it("handles restores inside restores", () => {
 			const ctxA = createContext("u")
 			const ctxB = createContext()

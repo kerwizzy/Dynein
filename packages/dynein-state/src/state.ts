@@ -731,7 +731,10 @@ function getRestoreAllStateFunction() {
 		collectingDependencies = old_collectingDependencies
 		currentOwner = old_currentOwner
 		currentEffect = old_currentEffect
-		contextValues = old_contextValues
+
+		// see the "handles restores inside restores" test for why the extra new Map() clone is required
+		contextValues = new Map(old_contextValues)
+
 		currentUpdateQueue = old_currentUpdateQueue
 		currentUpdateQueue.startDelayed = old_currentUpdateQueue_startDelayed
 
