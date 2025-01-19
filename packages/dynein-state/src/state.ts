@@ -714,7 +714,7 @@ export function addCustomStateStasher(stateStasher: StateStasher) {
 	customRestoreBaseStateFunctions.push(stateStasher())
 }
 
-function stashAllState() {
+function getRestoreAllStateFunction() {
 	const old_assertedStatic = assertedStatic
 	const old_collectingDependencies = collectingDependencies
 	const old_currentOwner = currentOwner
@@ -742,7 +742,7 @@ function stashAllState() {
 }
 
 export function $s<T>(promise: Promise<T>): Promise<T> {
-	const restore = stashAllState()
+	const restore = getRestoreAllStateFunction()
 	promise
 		.finally(() => {
 			///*DEBUG*/console.log("$s restore saved state")
@@ -775,15 +775,15 @@ export function $s<T>(promise: Promise<T>): Promise<T> {
 	return promise
 }
 
-export function stashState(): <T>(inner: () => T) => T {
-	const restoreStashed = stashAllState()
+export function saveAllState(): <T>(inner: () => T) => T {
+	const restoreSavePoint = getRestoreAllStateFunction()
 	return (inner) => {
-		const restore = stashAllState()
+		const restoreOuterState = getRestoreAllStateFunction()
 		try {
-			restoreStashed()
+			restoreSavePoint()
 			return inner()
 		} finally {
-			restore()
+			restoreOuterState()
 		}
 	}
 }

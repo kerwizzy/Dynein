@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, stashState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray } from "../built/state.js"
+import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray } from "../built/state.js"
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -1366,7 +1366,7 @@ describe("@dynein/state", () => {
 		})
 	})
 
-	describe("stashState", () => {
+	describe("saveAllState", () => {
 		it("saves and restores all state", () => {
 			const ctx = createContext("a")
 			const owner = new Owner(null)
@@ -1386,27 +1386,27 @@ describe("@dynein/state", () => {
 			}
 
 			const stash1Str = logState(`ctx = a, owner eq false, collecting = false, assertStatic = false`)
-			const stash1 = stashState()
+			const stash1 = saveAllState()
 
 			let stash2Str
 			let stash2
 			runWithContext(ctx, "b", () => {
 				stash2Str = logState(`ctx = b, owner eq false, collecting = false, assertStatic = false`)
-				stash2 = stashState()
+				stash2 = saveAllState()
 			})
 
 			let stash3Str
 			let stash3
 			runWithOwner(owner, () => {
 				stash3Str = logState(`ctx = a, owner eq true, collecting = false, assertStatic = false`)
-				stash3 = stashState()
+				stash3 = saveAllState()
 			})
 
 			let stash4Str
 			let stash4
 			assertStatic(() => {
 				stash4Str = logState(`ctx = a, owner eq false, collecting = false, assertStatic = true`)
-				stash4 = stashState()
+				stash4 = saveAllState()
 			})
 
 			let stash5Str
@@ -1414,7 +1414,7 @@ describe("@dynein/state", () => {
 			createRoot(() => {
 				createEffect(() => {
 					stash5Str = logState(`ctx = a, owner eq false, collecting = true, assertStatic = false`)
-					stash5 = stashState()
+					stash5 = saveAllState()
 				})
 			})
 
@@ -1482,7 +1482,7 @@ describe("@dynein/state", () => {
 					log += useContext(ctx) + " " // b
 					runWithContext(ctx, "c", () => {
 						log += useContext(ctx) + " " // c
-						stashState()
+						saveAllState()
 						log += useContext(ctx) + " " // c
 					})
 					log += useContext(ctx) + " " // b
@@ -1490,7 +1490,7 @@ describe("@dynein/state", () => {
 						log += useContext(ctx) + " " // d
 					})
 					log += useContext(ctx) + " " // b
-					stashState()
+					saveAllState()
 					log += useContext(ctx) + " " // b
 					runWithContext(ctx, "e", () => {
 						log += useContext(ctx) + " " // e
@@ -1515,7 +1515,7 @@ describe("@dynein/state", () => {
 				})
 			})
 			assert.strictEqual(count, 0)
-			stashState()
+			saveAllState()
 			signal(1)
 			assert.strictEqual(count, 1)
 		})
