@@ -1,4 +1,4 @@
-import { Signal, sample, isSignal, createSignal, toSignal } from "@dynein/state"
+import { Signal, sample, isSignal, createSignal, toSignal } from "./state.js"
 import WatchedValue from "./WatchedValue.js"
 
 export default class WatchedSet<T> extends WatchedValue<Set<T>> {
@@ -14,10 +14,10 @@ export default class WatchedSet<T> extends WatchedValue<Set<T>> {
 
 		this.value = toSignal(() => baseSignal(), (value: Set<T>) => {
 			if (value !== sample(baseSignal)) {
-				// used in Hyperfor to detect an overwrite of the entire set. Hyperfor can't just
+				// used in @dynein/dom addFor to detect an overwrite of the entire set. addFor can't just
 				// listen on set.value() because that gets fired for every .add and .delete
 
-				// Update this before firing spliceEvent because the handlers in Hyperfor will need
+				// Update this before firing spliceEvent because the handlers in addFor will need
 				// to read the updated set value
 				baseSignal(value)
 

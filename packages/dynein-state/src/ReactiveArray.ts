@@ -1,5 +1,5 @@
 import WatchedArray from "./WatchedArray.js"
-import { Signal, createSignal, sample, batch, onUpdate, createEffect, Owner, runWithOwner, getOwner, assertStatic, untrack, onWrite } from "@dynein/state"
+import { Signal, createSignal, sample, batch, onUpdate, createEffect, Owner, runWithOwner, getOwner, assertStatic, untrack, onWrite } from "./state.js"
 
 type ReactiveArrayItem<T> = {
 	value: T,

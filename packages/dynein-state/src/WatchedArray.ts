@@ -1,4 +1,4 @@
-import { createSignal, Signal, sample, isSignal, toSignal, subclock } from "@dynein/state"
+import { createSignal, Signal, sample, isSignal, toSignal, subclock } from "./state.js"
 import WatchedValue from "./WatchedValue.js"
 
 export default class WatchedArray<T> extends WatchedValue<T[]> {
@@ -12,10 +12,10 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 
 		this.value = toSignal(() => baseSignal(), (value: T[]) => {
 			if (value !== sample(baseSignal)) {
-				// used in Hyperfor to detect an overwrite of the entire array. Hyperfor can't just
-				// listen on array.value() because that gets fired for every .splice
+				// used in @dynein/dom addFor to detect an overwrite of the entire array. addFor can'
+				// just listen on array.value() because that gets fired for every .splice
 
-				// Update this before firing spliceEvent because the handlers in Hyperfor will need
+				// Update this before firing spliceEvent because the handlers in addFor will need
 				// to read the updated array value
 				baseSignal(value)
 

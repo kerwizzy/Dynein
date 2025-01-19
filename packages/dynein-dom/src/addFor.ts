@@ -1,6 +1,5 @@
-import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal, onWrite } from "@dynein/state"
-import { addNode, setInsertionState } from "@dynein/dom"
-import { WatchedArray, WatchedMap, WatchedSet } from "@dynein/watched-builtins"
+import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal, onWrite, WatchedSet, WatchedMap, WatchedArray } from "@dynein/state"
+import { addNode, setInsertionState } from "./dom.js"
 
 enum RenderState {
 	keep,
@@ -26,7 +25,7 @@ interface ItemPatchState<T> {
 	debugID: string
 }
 
-class Hyperfor<T> {
+class ForListArea<T> {
 	startItem: ItemPatchState<T> | null = null
 	endItem: ItemPatchState<T> | null = null
 	start: Node
@@ -38,8 +37,8 @@ class Hyperfor<T> {
 
 	constructor(render: (item: T, index: () => number) => void) {
 		this.render = render
-		this.start = addNode(document.createComment("<hyperfor>"))
-		this.end = addNode(document.createComment("</hyperfor>"))
+		this.start = addNode(document.createComment("<for>"))
+		this.end = addNode(document.createComment("</for>"))
 
 		this.owner = new Owner()
 	}
@@ -78,7 +77,7 @@ class Hyperfor<T> {
 		this.patchScheduled = false
 		let itemIterator = this.startItem
 		let prevNode = this.start
-		const render = this.render // assign to a variable so the Hyperfor isn't set as the `this` value inside `render()`
+		const render = this.render // assign to a variable so the ForListArea isn't set as the `this` value inside `render()`
 		assertStatic(() => {
 			let index = 0
 			while (itemIterator) {
@@ -142,11 +141,11 @@ class Hyperfor<T> {
 	}
 }
 
-export default function hyperfor<T>(list: WatchedArray<T>, render: (item: T, index: () => number) => void): void
-export default function hyperfor<T>(list: WatchedSet<T>, render: (item: T, index: () => number) => void): void
-export default function hyperfor<K, V>(list: WatchedMap<K, V>, render: (item: [K, V], index: () => number) => void): void
-export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | WatchedMap<any, any>, render: (item: any, index: () => number) => void): void {
-	const hyp = new Hyperfor(render)
+export default function addFor<T>(list: WatchedArray<T>, render: (item: T, index: () => number) => void): void
+export default function addFor<T>(list: WatchedSet<T>, render: (item: T, index: () => number) => void): void
+export default function addFor<K, V>(list: WatchedMap<K, V>, render: (item: [K, V], index: () => number) => void): void
+export default function addFor(list: WatchedArray<any> | WatchedSet<any> | WatchedMap<any, any>, render: (item: any, index: () => number) => void): void {
+	const hyp = new ForListArea(render)
 
 	// WatchedSet should behave like a set being used like an array, and WatchedMap should behave
 	// like an array of readonly tuples being used as a map. (So a value change will be equivalent
@@ -230,7 +229,7 @@ export default function hyperfor(list: WatchedArray<any> | WatchedSet<any> | Wat
 					}
 
 					// Must be a map, and since the node already exists, we must be changing
-					// the value. Since item values are immutable in hyperfors,
+					// the value. Since item values are immutable in ForListAreas,
 					// this means deleting the old tuple and adding the new one.
 
 					const newNode: ItemPatchState<any> = {

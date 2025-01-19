@@ -1,4 +1,4 @@
-import { Signal, sample } from "@dynein/state"
+import { Signal, sample } from "./state.js"
 
 export default abstract class WatchedValue<U> {
 	abstract readonly value: Signal<U>

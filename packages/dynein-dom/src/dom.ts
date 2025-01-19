@@ -462,3 +462,5 @@ export function defineCustomProperty(prop: string, handler: (el: SVGElement | HT
 	}
 	customPropertyHandlers.set(prop, handler)
 }
+
+export { default as addFor } from "./addFor.js"
