@@ -650,6 +650,9 @@ class Effect extends Owner {
 	}
 
 	destroy() {
+		for (const src of this.sources) {
+			src.drains.delete(this)
+		}
 		if (this.executing) {
 			this.reset()
 			this.destroyPending = true
