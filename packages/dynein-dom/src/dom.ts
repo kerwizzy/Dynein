@@ -1,4 +1,4 @@
-import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, addCustomStateStasher } from "@dynein/state"
+import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, addCustomStateStasher, _updateState, Signal } from "@dynein/state"
 
 type Primitive = string | number | boolean | undefined | null
 
@@ -150,6 +150,23 @@ function stringify(val: Primitive): string {
 // (void | undefined) forces you to not have return values, since that will almost always be a mistake.
 type Inner<T> = ((parent: T) => (void | undefined)) | Primitive
 
+function wrapEventListener(fn: any) {
+	const owner = new Owner()
+	return function wrappedListener() {
+		owner.reset()
+		_updateState(false, false, owner, undefined, () => {
+			//@ts-ignore
+			fn.apply(this, arguments)
+		})
+	}
+}
+
+function createSignalUpdateListener(el: any, attr: string, sig: Signal<any>) {
+	return () => {
+		sig(el[attr])
+	}
+}
+
 function createAndInsertElement<
 	Namespace extends ElementNamespace,
 	TagName extends string & keyof ElementTagNameMapForNamespace[Namespace]
@@ -178,27 +195,12 @@ function createAndInsertElement<
 				if (typeof val !== "function") {
 					throw new Error("Listeners must be functions.")
 				}
-				untrack(() => {
-					const owner = new Owner()
-					el.addEventListener(attributeName.substring(2).toLowerCase(), function () {
-						owner.reset()
-						runWithOwner(owner, () => {
-							batch(() => {
-								//@ts-ignore
-								val.apply(this, arguments)
-							})
-						})
-					})
-				})
+				el.addEventListener(attributeName.substring(2).toLowerCase(), wrapEventListener(val))
 			} else if (typeof val === "function") {
 				if (isSignal(val)) {
 					const updateEventName: string | undefined = updateEventTable[attributeName]
 					if (updateEventName) {
-						el.addEventListener(updateEventName, () => {
-							//@ts-ignore
-							let newVal = el[attributeName]
-							val(newVal)
-						})
+						el.addEventListener(updateEventName, createSignalUpdateListener(el, attributeName, val))
 					} else {
 						console.warn(
 							`No update event in table for attribute "${attributeName}", so couldn't bind.`
@@ -207,6 +209,12 @@ function createAndInsertElement<
 					}
 				}
 				createEffect(() => {
+					// TODO: this will be re-run whenever the value signal changes, even if the signal
+					// was updated by the addEventListener above and the signal is already in sync
+					// with the DOM. There isn't a good way to stop this effect from running again,
+					// but we can stop the redundant setAttrOrProp call by caching the last value we
+					// got from the DOM. Would that be worth it? Might it cause unexpected behavior
+					// if people manually assign to the element .value attribute?
 					const rawVal = val() ?? ""
 					setAttrOrProp(el, attributeName, rawVal)
 				})
@@ -229,16 +237,18 @@ function createAndInsertElement<
 	}
 
 	//special case to init selects properly. has to be done after options list added
-	const specialSelectAttrs = ["value", "selectedIndex"]
-	for (const attr of specialSelectAttrs) {
-		if (namespace === "xhtml" && tagName === "select" && attrs && attr in attrs) {
-			//@ts-ignore
-			const val = attrs[attr]
-			if (typeof val === "function") {
-				const rawVal = sample(val) ?? ""
-				setAttrOrProp(el, attr, rawVal)
-			} else {
-				setAttrOrProp(el, attr, (val as any) ?? "")
+	if (tagName === "select" && attrs && namespace === "xhtml") {
+		const specialSelectAttrs = ["value", "selectedIndex"]
+		for (const attr of specialSelectAttrs) {
+			if (attr in attrs) {
+				//@ts-ignore
+				const val = attrs[attr]
+				if (typeof val === "function") {
+					const rawVal = sample(val) ?? ""
+					setAttrOrProp(el, attr, rawVal)
+				} else {
+					setAttrOrProp(el, attr, (val as any) ?? "")
+				}
 			}
 		}
 	}
@@ -269,13 +279,14 @@ function makeCreateElementsProxy<Namespace extends ElementNamespace>(namespace: 
 				throw new Error("tagName must be a string")
 			}
 			function boundCreate(a?: any, b?: any) { //implementation of the BoundCreate overload
-				if (typeof a === "undefined" && typeof b === "undefined") {
+				const aIsObject = typeof a === "object"
+				if (a === undefined && b === undefined) {
 					return createAndInsertElement(namespace, tagName as any, null, null)
-				} else if (typeof a === "object" && typeof b === "undefined") {
+				} else if (aIsObject && b === undefined) {
 					return createAndInsertElement(namespace, tagName as any, a, null)
-				} else if (typeof b === "undefined") {
+				} else if (b === undefined) {
 					return createAndInsertElement(namespace, tagName as any, null, a)
-				} else if (typeof a === "object") {
+				} else if (aIsObject) {
 					return createAndInsertElement(namespace, tagName as any, a, b)
 				} else {
 					throw new Error("Unexpected state")

@@ -76,6 +76,8 @@ export function _getInternalState() {
 	return { assertedStatic, collectingDependencies, currentOwner, currentEffect, currentUpdateQueue }
 }
 
+export { updateState as _updateState }
+
 export function untrack<T>(inner: () => T): T {
 	return updateState(false, false, currentOwner, currentEffect, inner)
 }
