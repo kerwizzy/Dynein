@@ -123,6 +123,20 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML, `<div>test</div>`)
 			})
 
+			it("converts undefined to empty string", () => {
+				const document = mount(() => {
+					elements.div(undefined)
+				})
+				assert.strictEqual(document.body.innerHTML, `<div></div>`)
+			})
+
+			it("converts null to empty string", () => {
+				const document = mount(() => {
+					elements.div(null)
+				})
+				assert.strictEqual(document.body.innerHTML, `<div></div>`)
+			})
+
 			it("escapes string inner", () => {
 				const document = mount(() => {
 					elements.div("<b>test</b>")
