@@ -47,16 +47,7 @@ function replacementArea(start: Node, end: Node, setupReplacements: (replaceInne
 	})
 }
 
-const customPropertyHandlers: Map<string, (el: SVGElement | HTMLElement, val: Primitive) => void> =
-	new Map()
-
 function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
-	if (customPropertyHandlers.has(name)) {
-		let handler = customPropertyHandlers.get(name)!
-		handler(el, val)
-		return
-	}
-
 	if (name === "style" && typeof val === "object") {
 		for (const styleKey in val) {
 			const styleVal = val[styleKey]
@@ -467,13 +458,6 @@ export function addIf(ifCond: () => any, inner: () => void) {
 	})
 
 	return ifStageMaker
-}
-
-export function defineCustomProperty(prop: string, handler: (el: SVGElement | HTMLElement, val: Primitive) => void) {
-	if (customPropertyHandlers.has(prop)) {
-		throw new Error("Custom handler already defined for property ." + prop)
-	}
-	customPropertyHandlers.set(prop, handler)
 }
 
 export { default as addFor } from "./addFor.js"
