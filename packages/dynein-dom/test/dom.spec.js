@@ -1133,7 +1133,7 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "bxefc")
 			})
 
-			it("handles complete array replacent splices at the end of a batch", async () => {
+			it("handles complete array replacement splices at the end of a batch", async () => {
 				const arr = new WatchedArray([1, 2, 3, 4])
 				const document = mount(() => {
 					addFor(arr, (item) => {
@@ -1149,12 +1149,23 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "")
 			})
 
-			it("renders indexes correctly (1)", async () => {
+			it("passes NaN index by default", async () => {
 				const arr = new WatchedArray(["a", "b", "c", "d"])
 				const document = mount(() => {
 					addFor(arr, (item, index) => {
 						addText(() => item + index() + " ")
 					})
+				})
+				await sleep()
+				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "aNaN bNaN cNaN dNaN ")
+			})
+
+			it("renders indexes correctly (1)", async () => {
+				const arr = new WatchedArray(["a", "b", "c", "d"])
+				const document = mount(() => {
+					addFor(arr, (item, index) => {
+						addText(() => item + index() + " ")
+					}, true)
 				})
 				await sleep()
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0 b1 c2 d3 ")
@@ -1164,7 +1175,7 @@ describe("@dynein/dom", () => {
 				const document = mount(() => {
 					addFor(arr, (item, index) => {
 						addText(() => item + index() + " ")
-					})
+					}, true)
 					batch(() => {
 						arr.shift()
 						arr.push("e")
@@ -1182,7 +1193,7 @@ describe("@dynein/dom", () => {
 							throw new Error("Found a B!")
 						}
 						addText(() => item + index() + " ")
-					})
+					}, true)
 				})
 				await sleep()
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0 c2 ")
@@ -1196,7 +1207,7 @@ describe("@dynein/dom", () => {
 							throw new Error("Found a C!")
 						}
 						addText(() => item + index() + " ")
-					})
+					}, true)
 
 					batch(() => {
 						arr.push("c")
@@ -1206,7 +1217,7 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0 b1 ")
 			})
 
-			it("handles being in a addDynamic", async () => {
+			it("handles being in a addDynamic (1)", async () => {
 				const show = createSignal(true)
 				const arr = new WatchedArray(["a", "b"])
 
@@ -1231,16 +1242,98 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "nothing")
 			})
 
+			it("handles being in a addDynamic (2)", async () => {
+				const show = createSignal(true)
+				const arr = new WatchedArray(["a", "b"])
+
+				const document = mount(() => {
+					addDynamic(() => {
+						if (show()) {
+							addFor(arr, (item, index) => {
+								addText(() => item + index() + " ")
+							})
+						} else {
+							addText("nothing")
+						}
+					})
+				})
+				await sleep()
+
+				batch(() => {
+					show(false)
+					arr.push("c")
+				})
+				await sleep()
+				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "nothing")
+			})
+
+			it("handles being destroyed during rendering (at init)", async () => {
+				const show = createSignal(true)
+				const arr = new WatchedArray(["a", "b", "c"])
+
+				const document = mount(() => {
+					addDynamic(() => {
+						if (show()) {
+							addFor(arr, (item, index) => {
+								if (item === "b") {
+									show(false)
+								}
+								addText(() => item + index() + " ")
+							})
+						} else {
+							addText("nothing")
+						}
+					})
+				})
+				await sleep()
+				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "nothing")
+			})
+
+			it("handles being destroyed during rendering (during update)", async () => {
+				const show = createSignal(true)
+				const arr = new WatchedArray(["a", "d", "e"])
+
+				const document = mount(() => {
+					addDynamic(() => {
+						if (show()) {
+							addFor(arr, (item, index) => {
+								if (item === "b") {
+									show(false)
+								}
+								addText(() => item + index() + " ")
+							})
+						} else {
+							addText("nothing")
+						}
+					})
+				})
+				await sleep()
+				arr.splice(1, 0, "b", "c")
+				await sleep()
+				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "nothing")
+			})
+
 			// fuzz for edge cases
 			describe("passes randomly generated tests", () => {
 				for (let i = 0; i < 1000; i++) {
 					it("rand " + i, async () => {
-						let pairList = []
 						const actionsLog = []
+
+						const addAsyncMode = Math.random() < 0.05
+						if (addAsyncMode) {
+							actionsLog.push("async")
+						}
+
+						let pairList = []
 						for (let addToInit = 0; addToInit < Math.random() * 5; addToInit++) {
-							const v = Math.random().toString(16).substring(2, 4)
-							pairList.push(v)
-							actionsLog.push("push " + v)
+							if (Math.random() < 0.2) {
+								pairList.push("")
+								actionsLog.push(`push ""`)
+							} else {
+								const v = Math.random().toString(16).substring(2, 4) + " "
+								pairList.push(v)
+								actionsLog.push("push " + JSON.stringify(v))
+							}
 						}
 
 						actionsLog.push("init")
@@ -1248,40 +1341,111 @@ describe("@dynein/dom", () => {
 						let list = new WatchedArray(Array.from(pairList))
 
 						const document = mount(() => {
-							addFor(list, (item) => {
-								addText(item)
+							addFor(list, async (item) => {
+								if (!item) {
+									// don't add anything for empty string
+								} else {
+									if (addAsyncMode) {
+										addAsync(async () => {
+											if (Math.random() < 0.5) {
+												addText(item)
+												await $s(sleep(Math.random() * 50))
+											} else {
+												await $s(sleep(Math.random() * 50))
+												addText(item)
+											}
+										})
+									} else {
+										addText(item)
+									}
+								}
 							})
 						})
 
 						for (let j = 0; j < Math.random() * 15; j++) {
-							if (Math.random() < 0.1) {
-								actionsLog.push("clear")
-								pairList = []
-								list.value([])
+							if (addAsyncMode && Math.random() < 0.05) {
+								actionsLog.push("sleep")
+								await $s(sleep(Math.random() * 5))
+							} else if (Math.random() < 0.1) {
+								if (Math.random() < 0.5) {
+									actionsLog.push("clear")
+									pairList = []
+									list.value([])
+								} else {
+									const replaceOptions = [
+										["x "],
+										["x ", "y ", "z "],
+										["", "x ", "", "y "],
+										["", "", "", "", ""],
+										["", "x ", "", "y ", ""]
+									]
+									const newList = replaceOptions[Math.floor(Math.random() * replaceOptions.length)]
+									actionsLog.push("replace " + JSON.stringify(newList))
+									pairList = newList
+									list.value(Array.from(newList))
+								}
 							} else {
-								const startI = Math.floor(Math.random() * list.length)
-								const remove = Math.floor((Math.random() * 3 - 1.5) * list.length)
+								let startI = Math.floor((Math.random() * 2 - 1) * 1.5 * list.length)
+								let remove = Math.floor((Math.random() * 2 - 1) * 1.5 * list.length)
 
 								let toAdd = []
 								for (let n = 0; n < Math.random() * 10; n++) {
-									const v = Math.random().toString(16).substring(2, 4)
-									toAdd.push(v)
+									if (Math.random() < 0.2) {
+										toAdd.push("")
+									} else {
+										const v = Math.random().toString(16).substring(2, 4) + " "
+										toAdd.push(v)
+									}
 								}
 
-								list.splice(startI, remove, ...toAdd)
-								pairList.splice(startI, remove, ...toAdd)
-								actionsLog.push(`splice ${startI} ${remove} ${toAdd.join(" ")}`)
+								if (Math.random() < 0.05) {
+									if (Math.random() < 0.5) {
+										startI = Infinity
+									} else {
+										startI = undefined
+									}
+								}
+								if (Math.random() < 0.05) {
+									if (Math.random() < 0.5) {
+										remove = Infinity
+									} else {
+										remove = undefined
+									}
+								}
+
+								if (Math.random() < 0.05) {
+									// Pass odd argument lengths
+									const r = Math.random()
+									if (r < 0.3) {
+										list.splice()
+										pairList.splice()
+										actionsLog.push(`splice ()`)
+									} else if (r < 0.6) {
+										list.splice(startI)
+										pairList.splice(startI)
+										actionsLog.push(`splice (${startI})`)
+									} else {
+										list.splice(startI, remove)
+										pairList.splice(startI, remove)
+										actionsLog.push(`splice (${startI} ${remove})`)
+									}
+								} else {
+									list.splice(startI, remove, ...toAdd)
+									pairList.splice(startI, remove, ...toAdd)
+									actionsLog.push(`splice ${startI} ${remove} ${JSON.stringify(toAdd)}`)
+								}
 							}
 						}
 
-						await sleep()
-						const forOut = document.body.innerHTML.replace(/<\!--.*?-->/g, "")
-						const expectedOut = Array.from(pairList).join("")
-						if (forOut !== expectedOut) {
-							console.log(actionsLog.join("\n"))
+						if (addAsyncMode) {
+							await sleep(100)
+						} else {
+							await sleep(1)
 						}
 
-						assert.strictEqual(forOut, expectedOut)
+						const forOut = document.body.innerHTML.replace(/<\!--.*?-->/g, "")
+						const expectedOut = Array.from(pairList).join("")
+						assert.strictEqual(forOut, expectedOut, actionsLog.join("; "))
 					})
 				}
 			})
@@ -1473,7 +1637,7 @@ describe("@dynein/dom", () => {
 				const document = mount(() => {
 					addFor(list, (item, index) => {
 						addText(() => item + index() + " ")
-					})
+					}, true)
 				})
 				await sleep()
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0 b1 c2 d3 ")
@@ -1484,7 +1648,7 @@ describe("@dynein/dom", () => {
 				const document = mount(() => {
 					addFor(list, (item, index) => {
 						addText(() => item + index() + " ")
-					})
+					}, true)
 					batch(() => {
 						list.delete("a")
 						list.add("e")
@@ -1502,7 +1666,7 @@ describe("@dynein/dom", () => {
 							throw new Error("Found a B!")
 						}
 						addText(() => item + index() + " ")
-					})
+					}, true)
 				})
 				await sleep()
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0 c2 ")
@@ -1516,7 +1680,7 @@ describe("@dynein/dom", () => {
 							throw new Error("Found a C!")
 						}
 						addText(() => item + index() + " ")
-					})
+					}, true)
 
 					batch(() => {
 						list.add("c")
@@ -1574,7 +1738,7 @@ describe("@dynein/dom", () => {
 						})
 
 						for (let j = 0; j < Math.random() * 15; j++) {
-							const n = Math.floor(Math.random() * 4)
+							const n = Math.floor(Math.random() * 3)
 							if (n === 0) {
 								if (Math.random < 0.5) {
 									list.clear()
@@ -1585,12 +1749,6 @@ describe("@dynein/dom", () => {
 									list.value(new Set())
 									actionsLog.push("reset")
 								}
-							} else if (n === 1) {
-								if (actionsLog.at(-1) === "sleep") {
-									continue
-								}
-								actionsLog.push("sleep")
-								await sleep()
 							} else if (n === 2) {
 								if (Math.random() < 0.5) {
 									const v = Array.from(pairList)[Math.floor(pairList.size * Math.random())] ?? "x"
@@ -1832,13 +1990,12 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "3=x;2=b;")
 			})
 
-
 			it("renders indexes correctly (1)", async () => {
 				const list = new WatchedMap([["a", "x"], ["b", "y"], ["c", "z"]])
 				const document = mount(() => {
 					addFor(list, ([k, v], index) => {
 						addText(() => k + index() + "=" + v + ";")
-					})
+					}, true)
 				})
 				await sleep()
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0=x;b1=y;c2=z;")
@@ -1849,7 +2006,7 @@ describe("@dynein/dom", () => {
 				const document = mount(() => {
 					addFor(list, ([k, v], index) => {
 						addText(() => k + index() + "=" + v + ";")
-					})
+					}, true)
 					batch(() => {
 						list.delete("a")
 						list.set("d", "w")
@@ -1867,7 +2024,7 @@ describe("@dynein/dom", () => {
 							throw new Error("Found a B!")
 						}
 						addText(() => k + index() + "=" + v + ";")
-					})
+					}, true)
 				})
 				await sleep()
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "a0=x;c2=z;")
@@ -1881,7 +2038,7 @@ describe("@dynein/dom", () => {
 							throw new Error("Found a C!")
 						}
 						addText(() => k + index() + "=" + v + ";")
-					})
+					}, true)
 
 					batch(() => {
 						list.set("c", "z")
@@ -1940,7 +2097,7 @@ describe("@dynein/dom", () => {
 						})
 
 						for (let j = 0; j < Math.random() * 15; j++) {
-							const n = Math.floor(Math.random() * 4)
+							const n = Math.floor(Math.random() * 3)
 							if (n === 0) {
 								if (Math.random < 0.5) {
 									list.clear()
@@ -1951,12 +2108,6 @@ describe("@dynein/dom", () => {
 									list.value(new Map())
 									actionsLog.push("reset")
 								}
-							} else if (n === 1) {
-								if (actionsLog.at(-1) === "sleep") {
-									continue
-								}
-								actionsLog.push("sleep")
-								await sleep()
 							} else if (n === 2) {
 								if (Math.random() < 0.5) {
 									const k = Array.from(pairList.keys())[Math.floor(pairList.size * Math.random())] ?? "x"

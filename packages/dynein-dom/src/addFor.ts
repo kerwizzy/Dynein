@@ -1,49 +1,43 @@
 import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal, onWrite, WatchedSet, WatchedMap, WatchedArray } from "@dynein/state"
 import { addNode, setInsertionState } from "./dom.js"
 
-enum RenderState {
-	keep,
-	add,
-	remove
-}
-
-interface ItemPatchState<T> {
-	state: RenderState
-
-	value: T
-
-	start: Node | null
-	end: Node | null
-
-	prev: ItemPatchState<T> | null
-	next: ItemPatchState<T> | null
-
-	owner: Owner
-
-	indexSignal: Signal<number>
-
-	debugID: string
-}
+const returnNaN = () => NaN
 
 class ForListArea<T> {
-	startItem: ItemPatchState<T> | null = null
-	endItem: ItemPatchState<T> | null = null
-	start: Node
-	end: Node
-	render: (item: T, index: () => number) => void
-	owner: Owner
+	readonly start: Node
+	readonly end: Node
+	readonly updateIndex: boolean
+	readonly render: (item: T, index: () => number) => void
+	readonly owner: Owner
 
-	patchScheduled: boolean = false
+	private itemStartNodes: (Node | null)[]
+	private itemEndNodes: (Node | null)[]
+	private itemOwners: Owner[]
+	private indexSignals: (Signal<number> | (() => number))[]
 
-	constructor(render: (item: T, index: () => number) => void) {
+	nItems: number
+
+	constructor(render: (item: T, index: () => number) => void, updateIndex: boolean) {
 		this.render = render
 		this.start = addNode(document.createComment("<for>"))
 		this.end = addNode(document.createComment("</for>"))
+		this.updateIndex = updateIndex
 
 		this.owner = new Owner()
+
+		this.itemStartNodes = []
+		this.itemEndNodes = []
+		this.indexSignals = []
+		this.itemOwners = []
+
+		this.nItems = 0
 	}
 
 	clear() {
+		if (this.nItems === 0) {
+			return // nothing to do
+		}
+
 		if (this.start.previousSibling === null && this.end.nextSibling === null) {
 			const parent = this.start.parentNode!
 			parent.textContent = ""
@@ -56,135 +50,198 @@ class ForListArea<T> {
 			range.deleteContents()
 		}
 		this.owner.reset()
-		this.startItem = null
-		this.endItem = null
+
+		this.itemStartNodes = []
+		this.itemEndNodes = []
+		this.indexSignals = []
+		this.itemOwners = []
+
+		this.nItems = 0
 	}
 
-	schedulePatch() {
-		if (this.patchScheduled) {
-			return
-		}
-		this.patchScheduled = true
-		requestAnimationFrame(() => {
-			this.patch()
-		})
-	}
+	splice(start: number, remove: number, insert: Iterable<T>): void {
+		const listParent = this.start.parentNode! // TODO: can this ever be undefined?
 
-	patch() {
-		if (this.owner.isDestroyed) {
-			return
-		}
-		this.patchScheduled = false
-		let itemIterator = this.startItem
-		let prevNode = this.start
-		const render = this.render // assign to a variable so the ForListArea isn't set as the `this` value inside `render()`
-		assertStatic(() => {
-			let index = 0
-			while (itemIterator) {
-				const item = itemIterator
-				if (item.state === RenderState.add) {
-					item.indexSignal(index)
-
-					setInsertionState(prevNode.parentNode, prevNode.nextSibling, false, () => {
-						item.start = addNode(document.createComment(item!.debugID))
-						runWithOwner(item.owner, () => {
-							try {
-								render(item!.value, item.indexSignal)
-							} catch (err) {
-								console.warn("Caught error while rendering item", item.value, ": ", err)
-							}
-						})
-						item.end = addNode(document.createComment(item!.debugID))
-					})
-
-					prevNode = item.end!
-
-					item.state = RenderState.keep
-					index++
-				} else if (item.state === RenderState.remove) {
-					const range = document.createRange()
-
-					// If it was actually rendered, which it might not have been (if an item is added
-					// and removed between patches)
-					if (item.start) {
-						range.setStartBefore(item.start!)
-						range.setEndAfter(item.end!)
-						range.deleteContents()
-					}
-
-					if (item.prev) {
-						item.prev.next = item.next
-					} else {
-						this.startItem = item.next
-					}
-
-					if (item.next) {
-						item.next.prev = item.prev
-					} else {
-						this.endItem = item.prev
-					}
-					item.owner.destroy()
-
-					// don't change prevNode
-				} else {
-					item.indexSignal(index)
-
-					//nothing to do, continue
-					prevNode = item.end!
-
-					index++
+		const firstIndexAfterDelete = start + remove
+		if (remove > 0) {
+			if (start === 0 && remove >= this.nItems) {
+				this.clear()
+			} else {
+				if (start + remove > this.nItems) {
+					remove = this.nItems - start
 				}
 
-				itemIterator = item.next
+				let deleteStartIndex = start
+				while (this.itemStartNodes[deleteStartIndex] === null && deleteStartIndex < firstIndexAfterDelete) {
+					deleteStartIndex++
+				}
+
+				if (deleteStartIndex === firstIndexAfterDelete) {
+					// no nodes to delete, everything in the delete range was null
+				} else {
+					let deleteEndIndex = firstIndexAfterDelete - 1
+
+					// we don't need a bounds check here because we know there must be something in
+					// that range which isn't null
+					while (this.itemStartNodes[deleteEndIndex] === null) {
+						deleteEndIndex--
+					}
+
+					const deleteRangeStartNode = this.itemStartNodes[deleteStartIndex]!
+					const deleteRangeEndNode = this.itemEndNodes[deleteEndIndex]!
+					if (deleteRangeStartNode === deleteRangeEndNode) {
+						// only one element, no need to create a Range
+						listParent.removeChild(deleteRangeStartNode)
+					} else {
+						const range = document.createRange()
+						range.setStartBefore(deleteRangeStartNode)
+						range.setEndAfter(deleteRangeEndNode)
+						range.deleteContents()
+					}
+				}
+
+				for (let i = start; i < start + remove; i++) {
+					this.itemOwners[i].destroy()
+				}
 			}
-		})
+		}
+
+		const newItemOwners: Owner[] = []
+		const newItemStartNodes: (Node | null)[] = []
+		const newItemEndNodes: (Node | null)[] = []
+		const newItemIndexSignals: (Signal<number> | (() => number))[] = []
+
+		// These are the indexes of the last and first items outside the range which rendered
+		// at least one node
+		let lastItemIndexBeforeModifyRange = start - 1
+		while (lastItemIndexBeforeModifyRange >= 0 && this.itemStartNodes[lastItemIndexBeforeModifyRange] === null) {
+			lastItemIndexBeforeModifyRange--
+		}
+
+		let firstItemIndexAfterModifyRange = firstIndexAfterDelete
+		while (firstItemIndexAfterModifyRange < this.nItems && this.itemStartNodes[firstItemIndexAfterModifyRange] === null) {
+			firstItemIndexAfterModifyRange++
+		}
+
+		const lastNodeBeforeModifyRange = lastItemIndexBeforeModifyRange >= 0 ? this.itemEndNodes[lastItemIndexBeforeModifyRange]! : this.start
+		const firstNodeAfterModifyRange = firstItemIndexAfterModifyRange < this.nItems ? this.itemStartNodes[firstItemIndexAfterModifyRange]! : this.end
+
+		let insertI = 0
+
+		let iterator: Iterator<T> | null = null
+		if (Array.isArray(insert)) {
+			// no need for an iterator
+		} else {
+			iterator = insert[Symbol.iterator]()
+		}
+
+		let prevItemEndNode = lastNodeBeforeModifyRange
+		while (true) {
+			let item: T
+			if (iterator) {
+				const iteratorResult = iterator.next()
+				if (iteratorResult.done) {
+					break
+				} else {
+					item = iteratorResult.value
+				}
+			} else {
+				if (insertI >= (insert as Array<T>).length) {
+					break
+				}
+				item = (insert as Array<T>)[insertI]
+			}
+
+			// The parent scope was destroyed during rendering, so abort further rendering. (see dom.spec.js)
+			if (this.owner.isDestroyed) {
+				return
+			}
+
+			const itemOwner = new Owner(this.owner)
+
+			newItemOwners.push(itemOwner)
+
+			const itemIndexSignal = this.updateIndex ? createSignal(start + insertI) : returnNaN
+			if (this.updateIndex) {
+				newItemIndexSignals.push(itemIndexSignal)
+			}
+
+			setInsertionState(listParent, firstNodeAfterModifyRange, false, () => {
+				runWithOwner(itemOwner, () => {
+					try {
+						this.render(item, itemIndexSignal)
+					} catch (err) {
+						console.warn("Caught error while rendering item", item, ":", err)
+					}
+				})
+			})
+
+			const itemStartNode = prevItemEndNode.nextSibling
+			if (itemStartNode === firstNodeAfterModifyRange) {
+				// Didn't actually render anything
+				newItemStartNodes.push(null)
+				newItemEndNodes.push(null)
+			} else {
+				const itemEndNode = firstNodeAfterModifyRange.previousSibling
+				newItemStartNodes.push(itemStartNode)
+				newItemEndNodes.push(itemEndNode)
+				prevItemEndNode = itemEndNode!
+			}
+
+			insertI++
+		}
+
+		// FIXME: maybe short-circuit no spread for empty insert?
+		this.itemStartNodes.splice(start, remove, ...newItemStartNodes)
+		this.itemEndNodes.splice(start, remove, ...newItemEndNodes)
+		this.itemOwners.splice(start, remove, ...newItemOwners)
+
+		if (this.updateIndex) {
+			this.indexSignals.splice(start, remove, ...newItemIndexSignals)
+
+			if (remove === newItemIndexSignals.length) {
+				// added just as many elements as removed, so the indexes of subsequent items didn't change
+			} else {
+				// Update all the index signals after the splice area.
+				for (let i = start + newItemIndexSignals.length; i < this.indexSignals.length; i++) {
+					//@ts-ignore
+					this.indexSignals[i](i)
+				}
+			}
+		}
+
+		this.nItems = this.itemStartNodes.length
 	}
 }
 
-export default function addFor<T>(list: WatchedArray<T>, render: (item: T, index: () => number) => void): void
-export default function addFor<T>(list: WatchedSet<T>, render: (item: T, index: () => number) => void): void
-export default function addFor<K, V>(list: WatchedMap<K, V>, render: (item: [K, V], index: () => number) => void): void
-export default function addFor(list: WatchedArray<any> | WatchedSet<any> | WatchedMap<any, any>, render: (item: any, index: () => number) => void): void {
-	const hyp = new ForListArea(render)
+export default function addFor<T>(list: WatchedArray<T>, render: (item: T, index: () => number) => void, updateIndex?: boolean): void
+export default function addFor<T>(list: WatchedSet<T>, render: (item: T, index: () => number) => void, updateIndex?: boolean): void
+export default function addFor<K, V>(list: WatchedMap<K, V>, render: (item: [K, V], index: () => number) => void, updateIndex?: boolean): void
+export default function addFor(list: WatchedArray<any> | WatchedSet<any> | WatchedMap<any, any>, render: (item: any, index: () => number) => void, updateIndex: boolean = false): void {
+	const hyp = new ForListArea(render, updateIndex)
 
 	// WatchedSet should behave like a set being used like an array, and WatchedMap should behave
 	// like an array of readonly tuples being used as a map. (So a value change will be equivalent
 	// to an in-place splice/replace)
 	if (list instanceof WatchedSet || list instanceof WatchedMap) {
-		const keyToNodeMap = new Map<any, ItemPatchState<any>>()
+		let renderedKeys: any[] = []
+		let renderedKeysSet = new Set<any>()
+
 		const isSet = list instanceof WatchedSet
 
 		function reset() {
 			const listVal = sample(list.value as Signal<Map<any, any> | Set<any>>)
 
 			hyp.clear()
-			keyToNodeMap.clear()
+			//@ts-ignore
+			hyp.splice(0, 0, listVal instanceof Set ? listVal.values() : listVal.entries())
 
-			let prev: null | ItemPatchState<any> = null
-
+			renderedKeys = []
+			renderedKeysSet.clear()
 			for (const key of listVal.keys()) {
-				const state: ItemPatchState<any> = {
-					state: RenderState.add,
-					value: listVal instanceof Set ? key : [key, listVal.get(key)],
-					prev: prev,
-					next: null,
-					start: null,
-					end: null,
-					indexSignal: createSignal(0),
-					owner: new Owner(hyp.owner),
-					debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
-				}
-				hyp.endItem = state // TODO is there some more efficient way to figure out endItem?
-				if (prev) {
-					prev.next = state
-				} else {
-					hyp.startItem = state
-				}
-				keyToNodeMap.set(key, state)
-				prev = state
+				renderedKeys.push(key)
+				renderedKeysSet.add(key)
 			}
-
-			hyp.patch()
 		}
 		reset()
 
@@ -193,164 +250,58 @@ export default function addFor(list: WatchedArray<any> | WatchedSet<any> | Watch
 				reset()
 				return
 			}
+
 			const [key, val, add] = evt
-			const existingNode = keyToNodeMap.get(key)
-			if (!existingNode) {
+
+			if (!renderedKeysSet.has(key)) {
 				if (!add) {
 					// ignore, delete called on non-existent key
 					return
 				}
 
-				// adding to end then
-				const state: ItemPatchState<any> = {
-					state: RenderState.add,
-					value: isSet ? key : [key, val],
-					prev: hyp.endItem,
-					next: null,
-					start: null,
-					end: null,
-					indexSignal: createSignal(0),
-					owner: new Owner(hyp.owner),
-					debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
-				}
-				keyToNodeMap.set(key, state)
-				if (!hyp.startItem) {
-					hyp.startItem = state
-				}
-				if (hyp.endItem) {
-					hyp.endItem.next = state
-				}
-				hyp.endItem = state
+				// Add to end
+				hyp.splice(hyp.nItems, 0, [isSet ? key : [key, val]])
+				renderedKeys.push(key)
+				renderedKeysSet.add(key)
 			} else {
+				// FIXME: maybe find some way of making modifications and deletions better than O(n)?
 				if (add) {
 					if (isSet) {
 						// ignore, value already in set
 						return
 					}
 
+					const existingEntryIndex = renderedKeys.indexOf(key)
 					// Must be a map, and since the node already exists, we must be changing
 					// the value. Since item values are immutable in ForListAreas,
 					// this means deleting the old tuple and adding the new one.
-
-					const newNode: ItemPatchState<any> = {
-						state: RenderState.add,
-						value: [key, val],
-						prev: existingNode,
-						next: existingNode.next,
-						start: null,
-						end: null,
-						indexSignal: createSignal(0),
-						owner: new Owner(hyp.owner),
-						debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
-					}
-
-					if (!existingNode.next) {
-						hyp.endItem = newNode
-					}
-
-					existingNode.state = RenderState.remove
-					if (existingNode.next) {
-						existingNode.next.prev = newNode
-					}
-					existingNode.next = newNode
-					keyToNodeMap.set(key, newNode)
+					hyp.splice(existingEntryIndex, 1, [[key, val]])
 				} else {
+					const existingEntryIndex = renderedKeys.indexOf(key)
 					// node already exists and we're deleting it
-
-					existingNode.state = RenderState.remove
-					keyToNodeMap.delete(key)
+					hyp.splice(existingEntryIndex, 1, [])
+					renderedKeys.splice(existingEntryIndex, 1)
+					renderedKeysSet.delete(key)
 				}
 			}
-			hyp.schedulePatch()
 		})
 	} else {
-		let desiredState: ItemPatchState<any>[] = []
+		// array
 
 		function reset() {
 			hyp.clear()
-			desiredState = []
-
 			const arr = sample(list.value as Signal<any[]>)
-
-			let prev: null | ItemPatchState<any> = null
-			for (const item of arr) {
-				const state: ItemPatchState<any> = {
-					state: RenderState.add,
-					value: item,
-					prev: prev,
-					next: null,
-					start: null,
-					end: null,
-					indexSignal: createSignal(0),
-					owner: new Owner(hyp.owner),
-					debugID: "dbg_" + Math.random().toString(16).substring(2, 8)
-				}
-				if (prev) {
-					prev.next = state
-				} else {
-					hyp.startItem = state
-				}
-				desiredState.push(state)
-				prev = state
-			}
-
-			hyp.patch()
+			hyp.splice(0, 0, arr)
 		}
 		reset()
 
-		// array
 		onWrite(list.spliceEvent, (evt) => {
 			if (!evt) {
 				reset()
 				return
 			}
 
-			const [start, added, removed] = evt
-
-			for (let i = start; i < start + removed.length; i++) {
-				desiredState[i].state = RenderState.remove
-			}
-			const afterIndex = start + removed.length
-			const lastRemoved = afterIndex >= 1 ? desiredState[afterIndex - 1] : null
-			let prev = lastRemoved
-			const afterInsert = prev ? prev.next : hyp.startItem
-
-			const toInsert: ItemPatchState<any>[] = []
-
-			for (let j = 0; j < added.length; j++) {
-				const value = added[j]
-
-				const debugID = "dbg_" + Math.random().toString(16).substring(2, 8)
-				const state: ItemPatchState<any> = {
-					state: RenderState.add,
-					value,
-					start: null,
-					end: null,
-					prev: prev,
-					next: null,
-					indexSignal: createSignal(0),
-					owner: new Owner(hyp.owner),
-					debugID
-				}
-				if (prev === null) {
-					hyp.startItem = state
-				} else {
-					prev.next = state
-				}
-				prev = state
-				toInsert.push(state)
-			}
-
-			if (prev) {
-				prev.next = afterInsert
-			}
-			if (afterInsert) {
-				afterInsert.prev = prev
-			}
-
-			desiredState.splice(start, removed.length, ...toInsert)
-
-			hyp.schedulePatch()
+			hyp.splice(evt[0], evt[2].length, evt[1])
 		})
 	}
 }
