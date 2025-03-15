@@ -71,13 +71,10 @@ export class MappableReactiveArray<T> {
 
 		mapped.array.value(this.rawArray.map(mapItem))
 
-		onWrite(this.array.spliceEvent, (evt) => {
-			if (!evt) {
+		this.array.onSplice((startIndex, added, removed) => {
+			if (startIndex === undefined) {
 				return
 			}
-
-			const [startIndex, added, removed] = evt
-
 			const mappedAdded = added.map(mapItem)
 
 			const mappedRemoved = mapped.array.splice(startIndex, removed.length, ...mappedAdded)
@@ -98,12 +95,10 @@ export class MappableReactiveArray<T> {
 			}
 		}
 
-		onWrite(intermediate.array.spliceEvent, (evt) => {
-			if (!evt) {
+		intermediate.array.onSplice((startIndexInIntermediate, intermediateAdded, intermediateRemoved) => {
+			if (startIndexInIntermediate === undefined) {
 				return
 			}
-
-			const [startIndexInIntermediate, intermediateAdded, intermediateRemoved] = evt
 
 			// count how many of the removed intermediate items were actually in the filtered list at all
 			const totalFilteredRemoved = intermediateRemoved.reduce((acc, val) => val.value.keep ? acc + 1 : acc, 0)
@@ -177,12 +172,10 @@ export class MappableReactiveArray<T> {
 			sortedArr[i].index(i)
 		}
 
-		onWrite(this.array.spliceEvent, (evt) => {
-			if (!evt) {
+		this.array.onSplice((start, thisAdded, thisRemoved) => {
+			if (start === undefined) {
 				return
 			}
-
-			const [start, thisAdded, thisRemoved] = evt
 
 			for (let i = start; i < start + thisRemoved.length; i++) {
 				const sortedIndex = thisToSorted[i].index()
@@ -216,12 +209,10 @@ export class MappableReactiveArray<T> {
 		const destructables = this.rawArray.map(handleItem)
 
 		const outerOwner = getOwner()
-		onWrite(this.array.spliceEvent, (evt) => {
-			if (!evt) {
+		this.array.onSplice((start, added, removed) => {
+			if (start === undefined) {
 				return
 			}
-
-			const [start, added, removed] = evt
 
 			const destructablesToAdd = runWithOwner(outerOwner, () => added.map(handleItem))
 
@@ -234,12 +225,10 @@ export class MappableReactiveArray<T> {
 	static fromWatchedArray<T>(arr: WatchedArray<T>): MappableReactiveArray<T> {
 		const out = new ReactiveArray(sample(arr.value))
 
-		onWrite(arr.spliceEvent, (evt) => {
-			if (!evt) {
+		arr.onSplice((startIndex, added, removed) => {
+			if (startIndex === undefined) {
 				return
 			}
-
-			const [startIndex, added, removed] = evt
 
 			out.splice(startIndex, removed.length, ...added)
 		})

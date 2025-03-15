@@ -1,9 +1,9 @@
-import { createSignal, Signal, sample, isSignal, toSignal, subclock } from "./state.js"
+import { createSignal, Signal, sample, isSignal, toSignal, subclock, onWrite } from "./state.js"
 import WatchedValue from "./WatchedValue.js"
 
 export default class WatchedArray<T> extends WatchedValue<T[]> {
 	readonly value: Signal<T[]>
-	readonly spliceEvent: Signal<[startIndex: number, added: T[], removed: T[]] | null>
+	readonly spliceEvent: Signal<[start: number, added: T[], removed: T[]] | null>
 
 	constructor(iterable?: Iterable<T> | Signal<T[]> | null | undefined) {
 		super()
@@ -78,19 +78,68 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 		return this.value()[Symbol.iterator]()
 	}
 
-	splice(start: number, remove: number, ...insert: T[]) {
-		if (start < 0) {
-			throw new Error("Cannot splice before the beginning of the array")
-		}
-		if (start > this.v.length) {
-			throw new Error("Cannot splice after the end of the array")
-		}
-		const removed = this.v.splice(start, remove, ...insert)
+	splice(start: number, deleteCount?: number): T[]
+	splice(start: number, deleteCount: number, ...items: T[]): T[]
+	splice(arg1: any, arg2: any, ...items: T[]): T[] {
+		const currentArr = this.v
+		const len = currentArr.length
 
-		this.spliceEvent([start, insert, removed])
+
+		let start = arg1
+		let remove = 0
+
+		// Normalize arguments to the native JS behavior, so that things which consume .spliceEvent
+		// don't have to do this normalization.
+		if (arguments.length === 0) {
+			return [] // splice called with no arguments, nothing to do.
+		}
+
+		start = start || 0
+
+		if (arguments.length === 1) {
+			// remove parameter *omitted*, not just undefined
+			remove = Infinity
+		} else {
+			remove = arguments[1] || 0
+		}
+
+		if (start < 0) {
+			if (start < -len) {
+				start = 0
+			} else {
+				start = start + len
+			}
+		} else if (start >= len) {
+			remove = 0
+			start = len
+		}
+
+		if (remove < 0) {
+			remove = 0
+		}
+		if (start + remove > len) {
+			remove = len - start
+		}
+
+		// TODO: do more testing about the most performant way to pass the arguments list down to the real .splice
+		const removed = currentArr.splice(start, remove, ...items)
+
+		this.spliceEvent([start, items, removed])
 
 		this.fire()
 		return removed
+	}
+
+	// wrapper around .spliceEvent to give the added and removed items.
+	onSplice(listener: (...args: ([start: number, added: T[], removed: T[]] | [undefined, undefined, undefined])) => void) {
+		onWrite(this.spliceEvent, (evt) => {
+			if (!evt) {
+				listener(undefined, undefined, undefined)
+				return
+			}
+
+			listener(evt[0], evt[1], evt[2])
+		})
 	}
 
 	push(...items: T[]) {

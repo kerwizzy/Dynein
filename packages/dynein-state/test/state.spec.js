@@ -3162,11 +3162,11 @@ describe("@dynein/state", () => {
 					assert.strictEqual(Array.from(filtered).join(","), "a,b,c,d")
 
 					const log = []
-					onWrite(filtered.array.spliceEvent, (evt) => {
-						if (!evt) {
+					filtered.array.onSplice((start, added, removed) => {
+						if (start === undefined) {
 							return
 						}
-						const [start, added, removed] = evt
+
 						log.push(`${start}|-${removed.map(item => item.value).join(",")}|+${added.map(item => item.value).join(",")}`)
 					})
 
@@ -3216,17 +3216,18 @@ describe("@dynein/state", () => {
 
 					const sorted = arr.sort((a, b) => a - b)
 
-
 					const log = []
-					onWrite(sorted.array.spliceEvent, (evt) => {
-						if (!evt) {
+					sorted.array.onSplice((start, added, removed) => {
+						if (start === undefined) {
 							return
 						}
-						const [start, added, removed] = evt
+
 						log.push(`${start}|-${removed.map(item => item.value).join(",")}|+${added.map(item => item.value).join(",")}`)
 					})
 
 					arr.splice(1, 1, 7, -1, 2)
+
+					assert.strictEqual(Array.from(sorted).join(","), "-1,0,1,2,4,7")
 
 					// 0 1 2 3 4
 					// 0,1,3,4
