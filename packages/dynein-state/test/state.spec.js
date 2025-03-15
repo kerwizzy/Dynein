@@ -1112,28 +1112,29 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "a = 0 b = 1")
 		})
 
-		it("doesn't re-run when triggered while running", async () => {
+		it("re-runs when triggered while running", async () => {
 			const a = createSignal(0)
 
 			let order = ""
 			createRoot(() => {
 				createEffect(async () => {
-					order += "a = " + a()
+					const initA = a()
+					order += `a = ${initA} `
 					await $s(sleep(20))
-					order += " done "
+					order += `done(${initA}) `
 				})
 			})
 
-			assert.strictEqual(order, "a = 0")
+			assert.strictEqual(order, "a = 0 ")
 			a(1)
-			assert.strictEqual(order, "a = 0")
+			assert.strictEqual(order, "a = 0 a = 1 ")
 			await sleep(5)
 			a(2)
-			assert.strictEqual(order, "a = 0")
-			await sleep(20)
-			assert.strictEqual(order, "a = 0 done a = 2")
-			await sleep(20)
-			assert.strictEqual(order, "a = 0 done a = 2 done ")
+			assert.strictEqual(order, "a = 0 a = 1 a = 2 ")
+			await sleep(30)
+			assert.strictEqual(order, "a = 0 a = 1 a = 2 done(2) ")
+			await sleep(10)
+			assert.strictEqual(order, "a = 0 a = 1 a = 2 done(2) ")
 		})
 
 		it("calls onCleanup as expected", async () => {
@@ -1145,22 +1146,23 @@ describe("@dynein/state", () => {
 					onCleanup(() => {
 						order += "onCleanup "
 					})
-					order += "a = " + a() + " "
+					const initA = a()
+					order += `a = ${initA} `
 					await $s(sleep(20))
-					order += "done "
+					order += `done(${initA}) `
 				})
 			})
 
 			assert.strictEqual(order, "a = 0 ")
 			a(1)
-			assert.strictEqual(order, "a = 0 onCleanup ")
+			assert.strictEqual(order, "a = 0 onCleanup a = 1 ")
 			await sleep(5)
 			a(2)
-			assert.strictEqual(order, "a = 0 onCleanup ")
+			assert.strictEqual(order, "a = 0 onCleanup a = 1 onCleanup a = 2 ")
+			await sleep(30)
+			assert.strictEqual(order, "a = 0 onCleanup a = 1 onCleanup a = 2 done(2) ")
 			await sleep(20)
-			assert.strictEqual(order, "a = 0 onCleanup done a = 2 ")
-			await sleep(20)
-			assert.strictEqual(order, "a = 0 onCleanup done a = 2 done ")
+			assert.strictEqual(order, "a = 0 onCleanup a = 1 onCleanup a = 2 done(2) ")
 		})
 
 		it("handles forced destruction of parent within child", async () => {

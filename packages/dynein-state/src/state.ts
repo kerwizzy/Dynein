@@ -597,7 +597,6 @@ class Effect extends Owner {
 	private executing: boolean = false
 	private destroyPending: boolean = false
 	private asyncExec: boolean = false
-	private schedulePending: boolean = false
 
 	constructor(fn: () => (void | Promise<void>)) {
 		super()
@@ -642,9 +641,6 @@ class Effect extends Owner {
 		this.executing = false
 		if (this.destroyPending) {
 			this.destroy()
-		} else if (this.schedulePending) {
-			this.schedulePending = false
-			currentUpdateQueue.schedule(this.boundExec)
 		}
 	}
 
@@ -661,12 +657,8 @@ class Effect extends Owner {
 	}
 
 	schedule() {
-		this.reset() // Destroy subwatchers
-		if (this.asyncExec && this.executing) {
-			this.schedulePending = true
-		} else {
-			currentUpdateQueue.schedule(this.boundExec)
-		}
+		this.reset() // Destroy subwatchers (and any existing async execution runs)
+		currentUpdateQueue.schedule(this.boundExec)
 	}
 }
 
@@ -746,38 +738,59 @@ function getRestoreAllStateFunction() {
 	}
 }
 
+function restoreBaseState() {
+	///*DEBUG*/console.log("restore base state")
+
+	// Really restore *everything*, because this is returning control to the main event
+	// loop, and leaving a Dynein-wrapped code block.
+	assertedStatic = false
+	collectingDependencies = false
+	currentOwner = undefined
+	currentEffect = undefined
+	contextValues = new Map()
+	currentUpdateQueue = rootUpdateQueue
+	rootUpdateQueue.startDelayed = false
+	rootUpdateQueue.start()
+	for (const fn of customRestoreBaseStateFunctions) {
+		fn()
+	}
+}
+
 export function $s<T>(promise: Promise<T>): Promise<T> {
 	const restore = getRestoreAllStateFunction()
-	promise
-		.finally(() => {
-			///*DEBUG*/console.log("$s restore saved state")
-			restore()
+	const maybeResolve = Promise.withResolvers<T>()
 
-			// TODO: Should maybe use process.nextTick in node, since process.nextTick runs before
-			// microtasks, and thus code in process.nextTick will have state leakage.
-			// See: https://stackoverflow.com/a/57325561
-
-			//@ts-ignore
-			queueMicrotask(() => {
-				///*DEBUG*/console.log("restore base state")
-
-				// Really restore *everything*, because this is returning control to the main event
-				// loop, and leaving a Dynein-wrapped code block.
-				assertedStatic = false
-				collectingDependencies = false
-				currentOwner = undefined
-				currentEffect = undefined
-				contextValues = new Map()
-				currentUpdateQueue = rootUpdateQueue
-				rootUpdateQueue.startDelayed = false
-				rootUpdateQueue.start()
-				for (const fn of customRestoreBaseStateFunctions) {
-					fn()
-				}
-			})
+	// if the area or execution run that this was called in gets destroyed, simply freeze
+	// further execution by not resolving the output promise
+	let destroyed = false
+	if (currentOwner) {
+		onCleanup(() => {
+			destroyed = true
 		})
-		.catch(() => { })
-	return promise
+	}
+
+	Promise.allSettled([promise]).then(([result]) => {
+		if (destroyed) {
+			return
+		}
+
+		restore()
+
+		if (result.status === "fulfilled") {
+			maybeResolve.resolve(result.value)
+		} else {
+			maybeResolve.reject(result.reason)
+		}
+
+		// TODO: Should maybe use process.nextTick in node, since process.nextTick runs before
+		// microtasks, and thus code in process.nextTick will have state leakage.
+		// See: https://stackoverflow.com/a/57325561
+
+		//@ts-ignore
+		queueMicrotask(restoreBaseState)
+	})
+
+	return maybeResolve.promise
 }
 
 export function saveAllState(): <T>(inner: () => T) => T {

@@ -728,7 +728,7 @@ describe("@dynein/dom", () => {
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div><div>after = 1</div>`)
 		})
 
-		it("handles async destruction while rendering", async () => {
+		it("handles async destruction while rendering (1)", async () => {
 			const signal = createSignal(0)
 
 			let order = ""
@@ -745,6 +745,7 @@ describe("@dynein/dom", () => {
 							await $s(sleep(1))
 							order += "after "
 							elements.div("after")
+							order += "done "
 						})
 					}
 				})
@@ -755,7 +756,81 @@ describe("@dynein/dom", () => {
 			signal(1)
 			await sleep(20)
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
-			assert.strictEqual(order, "run outer before write signal cleanup inner run outer after ")
+			assert.strictEqual(order, "run outer before write signal cleanup inner run outer ")
+		})
+
+		it("handles async destruction while rendering (2)", async () => {
+			const signal = createSignal(0)
+
+			let order = ""
+			const document = mount(() => {
+				addDynamic(() => {
+					order += "run outer "
+					if (!signal()) {
+						addDynamic(async () => {
+							onCleanup(() => {
+								order += "cleanup inner "
+							})
+							order += "before "
+							elements.div("before")
+							await $s(sleep(1))
+							order += "after "
+							addAsyncReplaceable(($r) => {
+								order += "NOT RUN 1 "
+								$r(() => {
+									order += "NOT RUN 2 "
+									elements.div("after")
+								})
+							})
+							order += "done "
+						})
+					}
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			order += "write signal "
+			signal(1)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			assert.strictEqual(order, "run outer before write signal cleanup inner run outer ")
+		})
+
+		it("handles async destruction while rendering (3)", async () => {
+			const show = createSignal(true)
+
+			let order = ""
+			const document = mount(() => {
+				addDynamic(async () => {
+					order += "run (show = " + show() + ") "
+					if (!show()) {
+						return
+					}
+
+					onCleanup(() => {
+						order += "cleanup "
+					})
+					order += "before "
+					elements.div("before")
+					await $s(sleep(1))
+					order += "after "
+					addAsyncReplaceable(($r) => {
+						order += "NOT RUN 1 "
+						$r(() => {
+							order += "NOT RUN 2 "
+							elements.div("after")
+						})
+					})
+					order += "done "
+				})
+			})
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `<div>before</div>`)
+			order += "write signal "
+			show(false)
+			await sleep(20)
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
+			assert.strictEqual(order, "run (show = true) before write signal cleanup run (show = false) ")
 		})
 	})
 
@@ -801,7 +876,7 @@ describe("@dynein/dom", () => {
 			signal(1)
 			await sleep(20)
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
-			assert.strictEqual(order, "run outer before write signal cleanup inner run outer after ")
+			assert.strictEqual(order, "run outer before write signal cleanup inner run outer ")
 		})
 
 		it("returns the result of inner", () => {
@@ -813,6 +888,37 @@ describe("@dynein/dom", () => {
 			})
 
 			assert.strictEqual(val, 5)
+		})
+
+		it("handles sequential addAsync", async () => {
+			const document = mount(() => {
+				addAsync(async () => {
+					await $s(sleep(10))
+					addText("1")
+					await $s(sleep(20))
+					addText("2")
+				})
+				addAsync(async () => {
+					addText("a")
+					await $s(sleep(20))
+					addText("b")
+				})
+			})
+
+			/*
+			Sequence of states should be:
+
+			t	first		second
+			0				a
+			10	1			a
+			20	1			ab
+			30	12			ab
+
+			*/
+
+			await sleep(100)
+
+			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), `12ab`)
 		})
 	})
 
