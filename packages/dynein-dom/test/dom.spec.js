@@ -603,7 +603,7 @@ describe("@dynein/dom", () => {
 		// This obviously isn't the most preferable behavior, but there doesn't
 		// seem to be an easy way to fix it. The problem is that @dynein/state runs effects
 		// in order of last execution time, and the addIf() reruns when .else is called, after the
-		// addDynamic has already been adde This causes the addDynamic to rerun first after
+		// addDynamic has already been added. This causes the addDynamic to rerun first after
 		// val(1) triggers an update of both.
 		//
 		// The reason we have these two tests here is just to record the behavior and make it easy
@@ -644,7 +644,7 @@ describe("@dynein/dom", () => {
 			})
 
 			// This causes the addIf to rerun, and although the condition is the same,
-			// the addIf will now be executed after the addDynamic when val(1) is calle
+			// the addIf will now be executed after the addDynamic when val(1) is called
 			a(false)
 			assert.strictEqual(err, false)
 			val(1)
@@ -1102,7 +1102,6 @@ describe("@dynein/dom", () => {
 				await sleep()
 				assert.strictEqual(twoNode1 === twoNode2, false, "twoNode1 === twoNode2")
 			})
-
 
 			it("handles multiple splices inside a batch", async () => {
 				const arr = new WatchedArray([1, 2, 3, 4])

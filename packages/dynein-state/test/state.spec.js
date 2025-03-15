@@ -1071,7 +1071,6 @@ describe("@dynein/state", () => {
 	})
 
 	describe("createEffect (async)", () => {
-
 		it("handles synchronous deps", async () => {
 			const signal = createSignal(0)
 			let order = ""

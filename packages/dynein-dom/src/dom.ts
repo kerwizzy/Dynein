@@ -304,6 +304,7 @@ let idCounter = 0
 export function createUniqueId(): string {
 	return "__d" + (idCounter++)
 }
+
 export function addHTML(html: string): void {
 	if (typeof html !== "string" && typeof html !== "number") {
 		throw new Error("HTML must be a string or number")
@@ -313,6 +314,7 @@ export function addHTML(html: string): void {
 	const frag = tmp.content
 	addNode(frag)
 }
+
 export function addText(val: Primitive | (() => Primitive)): Node {
 	const node = document.createTextNode("")
 	setInsertionState(null, null, false, () => {

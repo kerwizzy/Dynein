@@ -81,6 +81,7 @@ export { updateState as _updateState }
 export function untrack<T>(inner: () => T): T {
 	return updateState(false, false, currentOwner, currentEffect, inner)
 }
+
 export function retrack<T>(inner: () => T): T {
 	return updateState(false, true, currentOwner, currentEffect, inner)
 }
@@ -268,7 +269,9 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 					arguments.length
 				)
 			}
+
 			setter(newVal!)
+
 			//@ts-ignore
 			if (signalWrapper[onWriteListenersFunctionsSymbol].length > 0) {
 				assertedStatic = false
@@ -325,13 +328,16 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 		}
 		return newVal!
 	} as Signal<T>
+
 	//@ts-ignore
 	signalWrapper[isSignalSymbol] = true
 
 	//@ts-ignore
 	signalWrapper[onWriteListenersFunctionsSymbol] = []
+
 	//@ts-ignore
 	signalWrapper[onWriteListenersOwnersSymbol] = []
+
 	//@ts-ignore
 	signalWrapper[onWriteListenersContextValuesSymbol] = []
 
@@ -344,21 +350,27 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 
 	//@ts-ignore
 	getter[onWriteListenersFunctionsSymbol].push(listener)
+
 	//@ts-ignore
 	getter[onWriteListenersOwnersSymbol].push(owner)
+
 	//@ts-ignore
 	getter[onWriteListenersContextValuesSymbol].push(new Map(contextValues))
+
 	onCleanup(() => {
 		//@ts-ignore
 		const idx = getter[onWriteListenersFunctionsSymbol].indexOf(listener)
+
 		if (idx === -1) {
 			console.warn("Unexpected internal state in onWrite listener cleanup")
 		}
 
 		// @ts-ignore
 		getter[onWriteListenersFunctionsSymbol].splice(idx, 1)
+
 		// @ts-ignore
 		getter[onWriteListenersOwnersSymbol].splice(idx, 1)
+
 		// @ts-ignore
 		getter[onWriteListenersContextValuesSymbol].splice(idx, 1)
 	})
@@ -491,6 +503,7 @@ class UpdateQueue {
 				if (this.onTickEnd.size === 0) {
 					break
 				}
+
 				const old_assertedStatic = assertedStatic
 				const old_collectingDependencies = collectingDependencies
 				const old_currentOwner = currentOwner
@@ -650,6 +663,7 @@ class Effect extends Owner {
 		for (const src of this.sources) {
 			src.drains.delete(this)
 		}
+
 		if (this.executing) {
 			this.reset()
 			this.destroyPending = true
@@ -668,7 +682,7 @@ class DependencyHandler<T> {
 	value: T
 	drains: Set<Effect>
 
-	dependents: Set<any> = new Set(); //for GC stuff
+	dependents: Set<any> = new Set() // for GC stuff
 
 	constructor(value: T) {
 		this.value = value
