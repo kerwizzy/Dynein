@@ -80,8 +80,7 @@ export function untrack<T>(inner: () => T): T {
 	return updateState(false, false, currentOwner, currentEffect, inner)
 }
 export function retrack<T>(inner: () => T): T {
-	// Preserve assertedStatic in case this is called outside an untrack
-	return updateState(assertedStatic, true, currentOwner, currentEffect, inner)
+	return updateState(false, true, currentOwner, currentEffect, inner)
 }
 
 const sample = untrack

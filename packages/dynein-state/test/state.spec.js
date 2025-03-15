@@ -2076,24 +2076,10 @@ describe("@dynein/state", () => {
 			})
 		})
 
-		it("does not set internalState.assertedStatic", () => {
+		it("clears internalState.assertedStatic", () => {
 			assertStatic(() => {
 				retrack(() => {
-					assert.strictEqual(_getInternalState().assertedStatic, true)
-				})
-			})
-		})
-
-		it("does not set internalState.assertedStatic (1)", () => {
-			retrack(() => {
-				assert.strictEqual(_getInternalState().assertedStatic, false)
-			})
-		})
-
-		it("does not set internalState.assertedStatic (2)", () => {
-			assertStatic(() => {
-				retrack(() => {
-					assert.strictEqual(_getInternalState().assertedStatic, true)
+					assert.strictEqual(_getInternalState().assertedStatic, false)
 				})
 			})
 		})
