@@ -772,7 +772,7 @@ function restoreBaseState() {
 	}
 }
 
-export function $s<T>(promise: Promise<T>): Promise<T> {
+export function stateStashPromise<T>(promise: Promise<T>): Promise<T> {
 	const restore = getRestoreAllStateFunction()
 	const maybeResolve = Promise.withResolvers<T>()
 
@@ -808,6 +808,8 @@ export function $s<T>(promise: Promise<T>): Promise<T> {
 
 	return maybeResolve.promise
 }
+
+export { stateStashPromise as $s }
 
 export function saveAllState(): <T>(inner: () => T) => T {
 	const restoreSavePoint = getRestoreAllStateFunction()
