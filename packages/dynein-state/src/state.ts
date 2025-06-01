@@ -125,7 +125,18 @@ export function assertStatic<T>(inner: () => T): T {
 
 	return updateState(true, false, currentOwner, currentEffect, inner)
 }
+
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
+	/** STATE CHANGES
+	 * assertedStatic 	       (preserve)
+	 * collectingDependencies  (preserve)
+	 * currentOwner            replace
+	 * currentEffect           (preserve)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           (preserve)
+	 */
 	return updateState(assertedStatic, collectingDependencies, owner, currentEffect, inner)
 }
 
