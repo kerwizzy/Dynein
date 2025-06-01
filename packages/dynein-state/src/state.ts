@@ -145,12 +145,29 @@ export function getOwner(): Owner | null | undefined {
 }
 
 export function createRoot<T>(inner: (dispose: () => void) => T): T {
-	// The outer updateState is to set collectingDependencies, assertedStatic, and contextValues before
-	// creating owner.
-	return updateState(false, false, null, currentEffect, () => {
+	/** STATE CHANGES
+	 * assertedStatic 	       false (reset)
+	 * collectingDependencies  false (reset)
+	 * currentOwner            wrapped null (reset)
+	 * currentEffect           undefined (reset)
+	 * contextValues           reset to base
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           reset to base
+	 */
+
+	const saved_currentUpdateQueue = currentUpdateQueue
+	const saved_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
+	const restore = getRestoreAllStateFunction()
+	try {
+		restoreBaseState()
+		currentUpdateQueue = saved_currentUpdateQueue
+		currentUpdateQueue.startDelayed = saved_currentUpdateQueue_startDelayed
 		const owner = new Owner(null)
 		return runWithOwner(owner, () => inner(() => owner.destroy()))
-	})
+	} finally {
+		restore()
+	}
 }
 
 export type Context<T> = {

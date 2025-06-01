@@ -91,14 +91,218 @@ describe("@dynein/state", () => {
 			})
 		})
 
-		it("restores current computation after throw", () => {
-			const before = _getInternalState().currentOwnerOwner
-			try {
-				createRoot(() => {
-					throw new Error("err")
+		it("restores current owner after throw", () => {
+			createRoot(() => {
+				createEffect(() => {
+					const before = _getInternalState().currentOwner
+					try {
+						createRoot(() => {
+							throw new Error("err")
+						})
+					} catch (err) { }
+					assert.strictEqual(_getInternalState().currentOwner, before)
 				})
-			} catch (err) { }
-			assert.strictEqual(_getInternalState().currentOwnerOwner, before)
+			})
+		})
+
+		it("creates a new owner with null parent", () => {
+			let innerOwner
+			let outerOwner = new Owner(null)
+			runWithOwner(outerOwner, () => {
+				createRoot(() => {
+					innerOwner = getOwner()
+				})
+			})
+
+			assert.notStrictEqual(innerOwner, outerOwner)
+			assert.strictEqual(innerOwner.parent, null)
+		})
+
+		it("the dispose function cleans it up", () => {
+			const log = []
+			createRoot((dispose) => {
+				onCleanup(() => {
+					log.push("cleanup")
+				})
+
+				log.push("dispose")
+				dispose()
+				log.push("done dispose")
+			})
+
+			assert.strictEqual(log.join(" "), "dispose cleanup done dispose")
+		})
+
+		it("returns the inner value", () => {
+			const out = createRoot(() => {
+				return "a"
+			})
+			assert.strictEqual(out, "a")
+		})
+
+		it("clears the current effect (1)", () => {
+			let innerEffect
+			createRoot(() => {
+				createEffect(() => {
+					createRoot(() => {
+						innerEffect = _getInternalState().currentEffect
+					})
+				})
+			})
+
+			assert.strictEqual(innerEffect, undefined)
+		})
+
+		it("clears the current effect (2)", () => {
+			const log = []
+			const sig = createSignal(0)
+
+			createRoot(() => {
+				createEffect(() => {
+					log.push("run")
+					createRoot(() => {
+						sig()
+					})
+				})
+			})
+
+			log.push("set sig")
+			sig(1)
+
+			assert.strictEqual(log.join(" "), "run set sig")
+		})
+
+		it("resets assertStatic", () => {
+			let inner
+			assertStatic(() => {
+				createRoot(() => {
+					inner = _getInternalState().assertedStatic
+				})
+			})
+
+			assert.strictEqual(inner, false)
+		})
+
+		it("resets collectingDependencies", () => {
+			let inner
+			createRoot(() => {
+				createEffect(() => {
+					createRoot(() => {
+						inner = _getInternalState().collectingDependencies
+					})
+				})
+			})
+
+			assert.strictEqual(inner, false)
+		})
+
+		it("clears context values", () => {
+			const ctx = createContext(0)
+			const log = []
+
+			log.push("start = " + useContext(ctx))
+			runWithContext(ctx, 1, () => {
+				log.push("outer1 = " + useContext(ctx))
+				createRoot(() => {
+					log.push("inner = " + useContext(ctx))
+				})
+				log.push("outer2 = " + useContext(ctx))
+			})
+			log.push("end = " + useContext(ctx))
+
+			assert.strictEqual(log.join(" "), "start = 0 outer1 = 1 inner = 0 outer2 = 1 end = 0")
+		})
+
+		it("clears custom states", () => {
+			let customState = 0
+			const log = []
+
+			log.push(`init ${customState}`)
+			const restoreCustomState = () => {
+				const saved = customState
+				return () => {
+					customState = saved
+				}
+			}
+
+			addCustomStateStasher(restoreCustomState)
+
+			customState = 1
+
+			log.push(`outer ${customState}`)
+			let inner
+			createRoot(() => {
+				log.push(`inner ${customState}`)
+				inner = customState
+			})
+
+			log.push(`end ${customState}`)
+
+			assert.strictEqual(log.join(" "), "init 0 outer 1 inner 0 end 1")
+		})
+
+		it("preserves update queue and start delayed (1)", () => {
+			const log = []
+
+			const a = createSignal("a")
+			const b = createSignal("b")
+			const c = createSignal("c")
+
+			createRoot(() => {
+				createEffect(() => {
+					log.push(`effect ${a()},${b()},${c()};`)
+				})
+
+				log.push("start batch;")
+				batch(() => {
+					createRoot(() => {
+						log.push("set a = A;")
+						a("A")
+						log.push("set b = B;")
+						b("B")
+					})
+					log.push("set a = 1;")
+					a("1")
+					log.push("set c = C;")
+					c("C")
+				})
+				log.push("end batch;")
+			})
+
+			assert.strictEqual(log.join(" "), `effect a,b,c; start batch; set a = A; set b = B; set a = 1; set c = C; effect 1,B,C; end batch;`)
+		})
+
+		it("preserves update queue and start delayed (2)", () => {
+			const log = []
+
+			const a = createSignal("a")
+			const b = createSignal("b")
+			const c = createSignal("c")
+
+			createRoot(() => {
+				createEffect(() => {
+					log.push(`effect ${a()},${b()},${c()};`)
+				})
+
+				log.push("start batch;")
+				batch(() => {
+					createRoot(() => {
+						subclock(() => {
+							log.push("set a = A;")
+							a("A")
+							log.push("set b = B;")
+							b("B")
+						})
+					})
+					log.push("set a = 1;")
+					a("1")
+					log.push("set c = C;")
+					c("C")
+				})
+				log.push("end batch;")
+			})
+
+			assert.strictEqual(log.join(" "), `effect a,b,c; start batch; set a = A; effect A,b,c; set b = B; effect A,B,c; set a = 1; set c = C; effect 1,B,C; end batch;`)
 		})
 	})
 
