@@ -79,6 +79,17 @@ export function _getInternalState() {
 export { updateState as _updateState }
 
 export function untrack<T>(inner: () => T): T {
+	/** STATE CHANGES
+	 * assertedStatic 	       false
+	 * collectingDependencies  false
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           (preserve)
+	 */
+
 	return updateState(false, false, currentOwner, currentEffect, inner)
 }
 
