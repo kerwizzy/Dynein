@@ -181,6 +181,17 @@ export function createContext(defaultValue?: any): Context<any> {
 }
 
 export function runWithContext<T, R>(context: Context<T>, value: T, inner: () => R): R {
+	/** STATE CHANGES
+	 * assertedStatic 	       (preserve)
+	 * collectingDependencies  (preserve)
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           modify
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           (preserve)
+	 */
+
 	const oldHas = contextValues.has(context)
 	let oldValue
 	if (oldHas) {
