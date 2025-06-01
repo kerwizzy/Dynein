@@ -517,6 +517,17 @@ export function isSignal(thing: any): thing is Signal<any> {
 }
 
 export function createEffect(fn: () => (void | Promise<void>)): Owner {
+	/** STATE CHANGES (inside fn, relative to their values at effect creation)
+	 * assertedStatic 	       false
+	 * collectingDependencies  true
+	 * currentOwner            (created Effect)
+	 * currentEffect           (created Effect)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   NOT (necessarily) PRESERVED
+	 * startDelayed            true
+	 * custom states           null/reset
+	 */
+
 	return new Effect(fn)
 }
 
@@ -751,13 +762,18 @@ class Effect extends Owner {
 		this.fn = fn.bind(undefined)
 		this.sources = new Set()
 		this.boundExec = this.exec.bind(this)
-		currentUpdateQueue.delayStart(this.boundExec)
+		this.boundExec()
 	}
 
 	private exec() {
 		if (this.isDestroyed) {
 			return
 		}
+
+		const cachedUpdateQueue = currentUpdateQueue // TODO: is this really necessary?
+
+		const oldStartDelayed = currentUpdateQueue.startDelayed
+		cachedUpdateQueue.startDelayed = true
 
 		this.reset() // Necessary to make the "effect created inside an exec-pending effect" test pass
 		for (const src of this.sources) {
@@ -766,6 +782,13 @@ class Effect extends Owner {
 		this.sources.clear()
 
 		const oldContextValues = contextValues
+
+		const restoreCustomStates = customStateStashers.map(stasher => stasher())
+
+		for (const fn of customRestoreBaseStateFunctions) {
+			fn()
+		}
+
 		try {
 			this.executing = true
 			contextValues = this.savedContextValues
@@ -781,6 +804,13 @@ class Effect extends Owner {
 			if (!this.asyncExec) {
 				this.finishExec()
 			}
+
+			for (const fn of restoreCustomStates) {
+				fn()
+			}
+
+			cachedUpdateQueue.startDelayed = oldStartDelayed
+			cachedUpdateQueue.start()
 		}
 	}
 

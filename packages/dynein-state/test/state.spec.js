@@ -324,6 +324,31 @@ describe("@dynein/state", () => {
 			})
 		})
 
+		it("sets internal state as expected", () => {
+			let log = []
+
+			function stringifyState(state) {
+				return state.assertedStatic + " " + state.collectingDependencies + " " + state.currentUpdateQueue.startDelayed
+			}
+
+			log.push("init")
+			const sig = createSignal(0)
+
+			log.push(stringifyState(_getInternalState()))
+			createEffect(() => {
+				log.push("effect sig = " + sig())
+				log.push(stringifyState(_getInternalState()))
+			})
+
+			log.push("set sig = 1")
+			sig(1)
+
+			log.push("end")
+			log.push(stringifyState(_getInternalState()))
+
+			assert.strictEqual(log.join("; "), "init; false false false; effect sig = 0; false true true; set sig = 1; effect sig = 1; false true true; end; false false false")
+		})
+
 		it("reexecutes on dependency update", () => {
 			const signal = createSignal(0)
 			let count = 0
@@ -911,7 +936,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "B{}B A{}A ")
 		})
 
-		it("batches second stage changes", () => {
+		it("batches second stage changes (1)", () => {
 			const a = createSignal(0)
 			const b = createSignal(0)
 			let order = ""
@@ -942,6 +967,35 @@ describe("@dynein/state", () => {
 			order = ""
 			a(1)
 			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{}b++ }s A{2}A s{2 a++{}a++ b++{}b++ }s B{2}B A{3}A s{3 }s ")
+		})
+
+		it("batches second stage changes (2)", () => {
+			let log = []
+			const sig1 = createSignal("a")
+			const sig2 = createSignal("z")
+
+			log.push("start")
+
+			createEffect(() => {
+				log.push("effect sig2 = " + sig2())
+			})
+
+			createEffect(() => {
+				log.push("effect sig1 = " + sig1())
+
+				log.push("set sig2 = " + sig1() + "x")
+				sig2(sig1() + "x")
+
+				log.push("set sig2 = " + sig1() + "y")
+				sig2(sig1() + "y")
+			})
+
+			log.push("set sig1 = b")
+			sig1("b")
+
+			log.push("end")
+
+			assert.strictEqual(log.join("; "), "start; effect sig2 = z; effect sig1 = a; set sig2 = ax; set sig2 = ay; effect sig2 = ay; set sig1 = b; effect sig1 = b; set sig2 = bx; set sig2 = by; effect sig2 = by; end")
 		})
 
 		it("subclock (test 1)", () => {
@@ -1272,6 +1326,46 @@ describe("@dynein/state", () => {
 
 			assert.strictEqual(order, "init run 1 update (undefined) { run 1 } update (2) { run 1 } ")
 		})
+
+		it("resets custom states", () => {
+			const log = []
+			let customState = 0
+			const sig = createSignal("a")
+
+			log.push(`init ${customState};`)
+			const restoreCustomState = () => {
+				const saved = customState
+				return () => {
+					customState = saved
+				}
+			}
+
+			addCustomStateStasher(restoreCustomState)
+
+			customState = 1
+
+			log.push(`outer ${customState};`)
+			createRoot(() => {
+				customState = 2
+
+				createEffect(() => {
+					log.push(`effect sig=${sig()} state=${customState};`)
+					customState = 10
+				})
+
+				customState = 3
+
+				log.push("write b;")
+				sig("b")
+				log.push(`after write state = ${customState};`)
+
+				customState = 4
+			})
+
+			log.push(`end ${customState};`)
+
+			assert.strictEqual(log.join(" "), "init 0; outer 1; effect sig=a state=0; write b; effect sig=b state=0; after write state = 3; end 1;")
+		})
 	})
 
 	describe("createEffect (async)", () => {
@@ -1457,6 +1551,44 @@ describe("@dynein/state", () => {
 
 			await sleep(10)
 			assert.strictEqual(order, "a = 0 b = 0 start done a = 1 b = 1 ")
+		})
+
+		it("batches changes between awaits (3)", async () => {
+			let log = []
+			const sig1 = createSignal("a")
+			const sig2 = createSignal("z")
+
+			log.push("start")
+
+			createRoot(() => {
+				createEffect(() => {
+					log.push("effect sig2 = " + sig2())
+				})
+
+				createEffect(async () => {
+					log.push("effect sig1 = " + sig1())
+
+					await $s(sleep(1))
+
+					log.push("set sig2 = " + sig1() + "x")
+					sig2(sig1() + "x")
+
+					log.push("set sig2 = " + sig1() + "y")
+					sig2(sig1() + "y")
+
+					await $s(sleep(1))
+					log.push("effect end")
+				})
+			})
+
+			await sleep(40)
+
+			log.push("set sig1 = b")
+			sig1("b")
+
+			await sleep(40)
+
+			assert.strictEqual(log.join("; "), "start; effect sig2 = z; effect sig1 = a; set sig2 = ax; set sig2 = ay; effect sig2 = ay; effect end; set sig1 = b; effect sig1 = b; set sig2 = bx; set sig2 = by; effect sig2 = by; effect end")
 		})
 
 		it("restores base values with no awaits", async () => {
