@@ -222,6 +222,17 @@ export function saveContexts(contexts: Context<any>[]): <T>(inner: () => T) => T
 }
 
 export function saveAllContexts(): <T>(inner: () => T) => T {
+	/** STATE CHANGES (after calling inner)
+	 * assertedStatic 	       (preserve)
+	 * collectingDependencies  (preserve)
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           restore
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           (preserve)
+	 */
+
 	const savedContextValues = new Map(contextValues)
 	return ((inner) => {
 		const oldContextValues = contextValues
