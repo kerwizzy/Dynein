@@ -321,14 +321,16 @@ export class Owner {
 		// want it to rerun `reset` with the same list, because that would cause an infinite loop
 		this.children = new Set()
 
-		for (const child of children) {
-			if (child instanceof Owner) {
-				child.parent = null
-				child.destroy()
-			} else {
-				child()
+		batch(() => {
+			for (const child of children) {
+				if (child instanceof Owner) {
+					child.parent = null
+					child.destroy()
+				} else {
+					child()
+				}
 			}
-		}
+		})
 	}
 }
 
@@ -504,6 +506,17 @@ export function createMemo<T>(fn: () => T, fireWhenEqual: boolean = false): () =
 }
 
 export function onCleanup(fn: () => void) {
+	/** STATE CHANGES (relative to values at creation)
+	 * assertedStatic 	       false
+	 * collectingDependencies  false
+	 * currentOwner            undefined
+	 * currentEffect           undefined
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   NOT PRESERVED
+	 * startDelayed            true
+	 * custom states           null/reset
+	 */
+
 	if (currentOwner === undefined) {
 		console.trace("Destructables created outside of a `createRoot` will never be disposed.")
 	}
@@ -516,7 +529,7 @@ export function onCleanup(fn: () => void) {
 		const old_contextValues = contextValues
 		try {
 			contextValues = savedContextValues
-			runWithOwner(undefined, fn)
+			updateState(false, false, undefined, undefined, fn)
 		} catch (err) {
 			console.warn("Caught error in cleanup function:", err)
 		} finally {

@@ -2533,6 +2533,113 @@ describe("@dynein/state", () => {
 			assert.doesNotThrow(() => sig(1))
 			assert.strictEqual(log, "ab")
 		})
+
+		it("isolates tracking scope", () => {
+			const a = createSignal(0)
+			const b = createSignal(0)
+			const ctx = createContext(0)
+
+			const log = []
+
+			createRoot(() => {
+				createEffect(() => {
+					log.push(`effect1 a=${a()};`)
+
+					onCleanup(() => {
+						b()
+						log.push(`cleanup;`)
+					})
+				})
+
+				createEffect(() => {
+					subclock(() => {
+						log.push(`effect2 set a=1;`)
+						retrack(() => {
+							a(1)
+						})
+					})
+				})
+
+				log.push("set b=1;")
+				b(1)
+			})
+
+			assert.strictEqual(log.join(" "), `effect1 a=0; effect2 set a=1; cleanup; effect1 a=1; set b=1;`)
+		})
+
+		it("batches updates (1)", () => {
+			const log = []
+
+			createRoot(() => {
+				const sig1 = createSignal(0)
+
+				createEffect(() => {
+					log.push(`effect1 sig1 = ${sig1()}`)
+				})
+
+				const sig2 = createSignal(0)
+				createEffect(() => {
+					log.push(`effect2 sig2 = ${sig2()}`)
+					onCleanup(() => {
+						log.push("onCleanup1 start")
+						sig1(1)
+						sig1(2)
+						sig1(3)
+						log.push("onCleanup1 end")
+					})
+
+					onCleanup(() => {
+						log.push("onCleanup2 start")
+						sig1(4)
+						sig1(5)
+						sig1(6)
+						log.push("onCleanup2 end")
+					})
+				})
+
+				log.push("set sig2 = 1")
+				sig2(1)
+				log.push("done")
+			})
+
+			assert.strictEqual(log.join("; "), `effect1 sig1 = 0; effect2 sig2 = 0; set sig2 = 1; onCleanup1 start; onCleanup1 end; onCleanup2 start; onCleanup2 end; effect1 sig1 = 6; effect2 sig2 = 1; done`)
+		})
+
+		it("batches updates (2)", () => {
+			const log = []
+
+			createRoot(() => {
+				const sig1 = createSignal(0)
+
+				createEffect(() => {
+					log.push(`effect1 sig1 = ${sig1()}`)
+				})
+
+				const owner = createEffect(() => {
+					onCleanup(() => {
+						log.push("onCleanup1 start")
+						sig1(1)
+						sig1(2)
+						sig1(3)
+						log.push("onCleanup1 end")
+					})
+
+					onCleanup(() => {
+						log.push("onCleanup2 start")
+						sig1(4)
+						sig1(5)
+						sig1(6)
+						log.push("onCleanup2 end")
+					})
+				})
+
+				log.push("destroy")
+				owner.destroy()
+				log.push("done")
+			})
+
+			assert.strictEqual(log.join("; "), `effect1 sig1 = 0; destroy; onCleanup1 start; onCleanup1 end; onCleanup2 start; onCleanup2 end; effect1 sig1 = 6; done`)
+		})
 	})
 
 	describe("runWithOwner", () => {
