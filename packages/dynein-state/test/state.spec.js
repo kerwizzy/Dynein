@@ -2155,9 +2155,11 @@ describe("@dynein/state", () => {
 
 		it("sets internalState.collectingDependencies", () => {
 			let val = "NOT RUN"
-			createEffect(() => {
-				assertStatic(() => {
-					val = _getInternalState().collectingDependencies
+			createRoot(() => {
+				createEffect(() => {
+					assertStatic(() => {
+						val = _getInternalState().collectingDependencies
+					})
 				})
 			})
 

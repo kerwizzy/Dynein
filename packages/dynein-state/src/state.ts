@@ -112,6 +112,17 @@ const sample = untrack
 export { sample }
 
 export function assertStatic<T>(inner: () => T): T {
+	/** STATE CHANGES
+	 * assertedStatic 	       true
+	 * collectingDependencies  false
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           (preserve)
+	 */
+
 	return updateState(true, false, currentOwner, currentEffect, inner)
 }
 export function runWithOwner<T>(owner: Owner | null | undefined, inner: () => T): T {
