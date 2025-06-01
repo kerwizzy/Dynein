@@ -2144,6 +2144,180 @@ describe("@dynein/state", () => {
 			assert.strictEqual(log.join(" "), "init 0; outer 1; write b; onUpdate1 val=b state=0; onUpdate2 val=b state=0; after write state = 3; write c; onUpdate1 val=c state=0; onUpdate2 val=c state=0; after write state = 4; end 1;")
 		})
 	})
+	describe("createMemo", () => {
+		it("fires only if memoed function returns the same value", () => {
+			const signal1 = createSignal(0, true)
+			const signal2 = createSignal(5, true)
+
+			let log = ""
+
+			createRoot(() => {
+				const memo = createMemo(() => {
+					const out = signal1() < signal2()
+					log += `run memo (=${out}); `
+					return out
+				})
+
+				createEffect(() => {
+					log += "effect run " + memo() + "; "
+				})
+
+				log += `sig1 = ${signal1()} sig2 = ${signal2()}; `
+
+				log += `set sig1 = 1; `
+				signal1(1)
+
+				log += "set sig2 = 0; "
+				signal2(0)
+			})
+
+			assert.strictEqual(log, `run memo (=true); effect run true; sig1 = 0 sig2 = 5; set sig1 = 1; run memo (=true); set sig2 = 0; run memo (=false); effect run false; `)
+		})
+
+		it("returns the correct value even inside a batch", () => {
+			const signal1 = createSignal(0)
+			const signal2 = createSignal(5)
+
+			const order = []
+
+			createRoot(() => {
+				const memo = createMemo(() => {
+					const v = signal1() < signal2()
+					order.push(`run memo (=>${v});`)
+
+					return v
+				})
+
+				createEffect(() => {
+					order.push(`effect ${memo()};`)
+				})
+
+				order.push(`sig1 = ${signal1()} sig2 = ${signal2()};`)
+
+				order.push("batch{")
+
+				batch(() => {
+					order.push(`set sig1 = 1;`)
+					signal1(1)
+					order.push(`set sig1 = 9;`)
+					signal1(9)
+					order.push(`set sig1 = 2;`)
+					signal1(2)
+					order.push(`memo ${memo()};`) // memo should only be recalculated lazily here
+
+					order.push("set sig2 = 0;")
+					signal2(0)
+					order.push(`memo ${memo()};`)
+				})
+
+				order.push("}batch")
+			})
+
+			assert.strictEqual(order.join(" "), `run memo (=>true); effect true; sig1 = 0 sig2 = 5; batch{ set sig1 = 1; set sig1 = 9; set sig1 = 2; run memo (=>true); memo true; set sig2 = 0; run memo (=>false); memo false; effect false; }batch`)
+		})
+
+		it("updates internal state as expected", () => {
+			let state
+			createRoot(() => {
+				createMemo(() => {
+					state = _getInternalState()
+				})
+			})
+
+			assert.strictEqual(state.assertedStatic, false)
+			assert.strictEqual(state.collectingDependencies, true)
+			assert.strictEqual(state.currentOwner, state.currentEffect)
+		})
+
+		it("runs internal modifications in a batch", () => {
+			const signal1 = createSignal(0, true)
+			const signal2 = createSignal(5, true)
+			const other = createSignal("a", true)
+
+			const log = []
+
+			createRoot(() => {
+				const memo = createMemo(() => {
+					const out = signal1() < signal2()
+					other("b")
+					other("c")
+					log.push(`run memo (=${out});`)
+					return out
+				})
+
+				createEffect(() => {
+					log.push(`effect run ${memo()};`)
+				})
+
+				createEffect(() => {
+					log.push(`other effect run ${other()};`)
+				})
+
+				log.push(`sig1 = ${signal1()} sig2 = ${signal2()};`)
+
+				log.push(`set sig1 = 1;`)
+				signal1(1)
+				log.push(`done set sig1 = 1;`)
+
+				log.push("set sig2 = 0;")
+				signal2(0)
+				log.push(`done set sig2 = 0;`)
+			})
+
+			assert.strictEqual(log.join(" "), `run memo (=true); effect run true; other effect run c; sig1 = 0 sig2 = 5; set sig1 = 1; run memo (=true); other effect run c; done set sig1 = 1; set sig2 = 0; run memo (=false); other effect run c; effect run false; done set sig2 = 0;`)
+		})
+
+		it("resets custom states", () => {
+			const log = []
+			let customState = 0
+			const sig = createSignal("a0")
+
+			log.push(`init ${customState};`)
+			const restoreCustomState = () => {
+				const saved = customState
+				return () => {
+					customState = saved
+				}
+			}
+
+			addCustomStateStasher(restoreCustomState)
+
+			customState = 1
+
+			log.push(`outer ${customState};`)
+			createRoot(() => {
+				customState = 2
+
+				const memo = createMemo(() => {
+					const out = `[${sig()[0]}]`
+					log.push(`memo ${customState},${out};`)
+					customState = 10
+					return out
+				})
+
+				customState = 3
+
+				createEffect(() => {
+					log.push(`effect ${customState},${memo()};`)
+					customState = 11
+				})
+
+				log.push("write a1;")
+				sig("a1")
+				log.push(`after write ${customState},${memo()};`)
+
+				customState = 4
+
+				log.push("write b0;")
+				sig("b0")
+				log.push(`after write ${customState},${memo()};`)
+			})
+
+			log.push(`end ${customState};`)
+
+			assert.strictEqual(log.join(" "), "init 0; outer 1; memo 0,[a]; effect 0,[a]; write a1; memo 0,[a]; after write 3,[a]; write b0; memo 0,[b]; effect 0,[b]; after write 4,[b]; end 1;")
+		})
+	})
 
 	})
 

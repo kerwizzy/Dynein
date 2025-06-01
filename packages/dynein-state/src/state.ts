@@ -561,12 +561,55 @@ export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): O
 	})
 }
 
-export function createMemo<T>(fn: () => T, fireWhenEqual: boolean = false): () => T {
-	const internalSignal = createSignal<T>(undefined as unknown as T, fireWhenEqual)
-	createEffect(() => {
-		internalSignal(fn())
-	})
-	return () => internalSignal()
+export function createMemo<T>(fn: () => T): () => T {
+	/** STATE CHANGES (inside fn, relative to their values at memo creation)
+	 * assertedStatic 	       false
+	 * collectingDependencies  true
+	 * currentOwner            internal effect
+	 * currentEffect           internal effect
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   NOT PRESERVED
+	 * startDelayed            true
+	 * custom states           null/reset
+	 */
+
+	let latestValue: T
+	const internalSignal = createSignal<T>(undefined as unknown as T)
+
+	let execForced = false
+	const runUpdate = () => {
+		latestValue = fn()
+		if (execForced) {
+			// We're running inside a subclock, so don't update the signal here, so that we don't
+			// trigger everything that depends on the signal to also run immediately inside the
+			// subclock. This is only being run now inside a subclock to return the latest value to
+			// something being run in a batch.
+		} else {
+			internalSignal(latestValue)
+		}
+	}
+
+	const effect = new Effect(runUpdate)
+
+	return () => {
+		if (effect.execPending) {
+			// We must be in a batch, or else the effect would have already been run
+
+			execForced = true
+			effect.forceExec()
+			execForced = false
+
+			// Mark that everything that uses the signal needs an update. (But because this isn't run
+			// inside the subclock created by forceExec, the updates triggered by this new value change
+			// (if it really did change) will only be handled after the end of the batch.)
+			internalSignal(latestValue)
+		}
+
+		// Log this signal as a dependency
+		return internalSignal()
+	}
+}
+
 }
 
 export function onCleanup(fn: () => void) {
@@ -713,6 +756,8 @@ class UpdateQueue {
 	}
 
 	subclock(fn: () => void) {
+		this.unschedule(fn) // Important for having Effect.forceExec not cause unnecessary executions
+
 		const old_assertedStatic = assertedStatic
 		const old_collectingDependencies = collectingDependencies
 
@@ -772,6 +817,7 @@ class Effect extends Owner {
 	private executing: boolean = false
 	private destroyPending: boolean = false
 	private asyncExec: boolean = false
+	execPending: boolean = false
 
 	constructor(fn: () => (void | Promise<void>)) {
 		super()
@@ -808,7 +854,9 @@ class Effect extends Owner {
 
 		try {
 			this.executing = true
+			this.execPending = false
 			contextValues = this.savedContextValues
+
 			const maybePromise = updateState(false, true, this, this, this.fn)
 			this.asyncExec = maybePromise instanceof Promise
 			if (this.asyncExec) {
@@ -853,7 +901,12 @@ class Effect extends Owner {
 
 	schedule() {
 		this.reset() // Destroy subwatchers (and any existing async execution runs)
+		this.execPending = true
 		currentUpdateQueue.schedule(this.boundExec)
+	}
+
+	forceExec() {
+		currentUpdateQueue.subclock(this.boundExec)
 	}
 }
 
