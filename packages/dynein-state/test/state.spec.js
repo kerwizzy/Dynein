@@ -1902,7 +1902,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(count, 1)
 		})
 
-		it("does reexecute on equal data update", () => {
+		it("does reexecute on equal data update with fireOnEqual", () => {
 			const signal = createSignal(0, true)
 			let count = 0
 			createRoot(() => {
@@ -1917,60 +1917,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(count, 2)
 		})
 
-		it("does not track inner deps", () => {
-			const signal = createSignal(0)
-			const b = createSignal(0)
-			let count = 0
-			createRoot(() => {
-				onUpdate(signal, () => {
-					b()
-					count++
-				})
-			})
-			assert.strictEqual(count, 0)
-			signal(1)
-			assert.strictEqual(count, 1)
-			b(1)
-			assert.strictEqual(count, 1)
-		})
-
-		it("calls inner with the latest value", () => {
-			const signal = createSignal(0)
-			let count = 0
-			let calledWithVal = -1
-			createRoot(() => {
-				onUpdate(signal, (val) => {
-					count++
-					calledWithVal = val
-				})
-			})
-			assert.strictEqual(count, 0)
-			signal(12)
-			assert.strictEqual(count, 1)
-			assert.strictEqual(calledWithVal, 12)
-		})
-
-		it("does not execute till batch end", () => {
-			const signal = createSignal(0)
-			let order = ""
-			createRoot(() => {
-				order += "init "
-				onUpdate(signal, (val) => {
-					order += "run " + val + " "
-				})
-			})
-
-			order += "batch{"
-			batch(() => {
-				order += "write{"
-				signal(1)
-				order += "}write "
-			})
-			order += "}batch "
-
-			assert.strictEqual(order, "init batch{write{}write run 1 }batch ")
-		})
-
+		// Matches onWrite tests
 		it("runs cleanups before listener inners", () => {
 			const signal = createSignal(0)
 
@@ -1997,6 +1944,207 @@ describe("@dynein/state", () => {
 			signal(2)
 			assert.strictEqual(order, "write 1 run a(1) run b(1) write 2 cleanup a(1) cleanup b(1) run a(2) run b(2) ")
 		})
+
+		it("does not track deps (init)", () => {
+			const signal = createSignal(0)
+
+			let state
+			createRoot(() => {
+				createEffect(() => {
+					onUpdate(signal, () => {
+						state = _getInternalState()
+					})
+					signal(1)
+				})
+			})
+
+			assert.strictEqual(state.collectingDependencies, false)
+			assert.strictEqual(state.assertedStatic, false)
+			assert.strictEqual(state.currentEffect, undefined)
+		})
+
+		it("does not track deps (after init)", () => {
+			const signal = createSignal(0)
+
+			let state
+			createRoot(() => {
+				createEffect(() => {
+					onUpdate(signal, () => {
+						state = _getInternalState()
+					})
+				})
+			})
+
+			signal(1)
+
+			assert.strictEqual(state.collectingDependencies, false)
+			assert.strictEqual(state.assertedStatic, false)
+			assert.strictEqual(state.currentEffect, undefined)
+		})
+
+		it("executes secondary writes in a batch", () => {
+			const signal = createSignal(0)
+
+			let a = createSignal(0)
+			let b = createSignal(0)
+			let c = createSignal(0)
+
+			let order = ""
+			createRoot(() => {
+				createEffect(() => {
+					order += "AB{"
+					a()
+					b()
+					order += "}AB "
+				})
+
+				createEffect(() => {
+					order += "C{"
+					c()
+					order += "}C "
+				})
+
+				onUpdate(signal, () => {
+					order += "listener1{"
+					a(1)
+					b(1)
+					order += "}listener1 "
+				})
+
+				onUpdate(signal, () => {
+					order += "listener2{"
+					c(1)
+					order += "}listener2 "
+				})
+			})
+
+			order += "write{"
+			signal(1)
+			order += "}write "
+
+			assert.strictEqual(order, "AB{}AB C{}C write{listener1{}listener1 listener2{}listener2 AB{}AB C{}C }write ")
+		})
+
+		it("executes secondary writes within the writer's update queue", () => {
+			const signal = createSignal(0)
+
+			let a = createSignal(0)
+			let b = createSignal(0)
+
+			const log = []
+			createRoot(() => {
+				createEffect(() => {
+					log.push("A{")
+					a()
+					log.push("}A")
+				})
+
+				createEffect(() => {
+					log.push("B{")
+					b(a())
+					log.push("}B")
+				})
+			})
+
+			log.push("batch{")
+			batch(() => {
+				a(1)
+
+				log.push("subclock{")
+				subclock(() => {
+					log.push("writeSignal2{")
+					a(2)
+					log.push("}writeSignal2")
+
+					log.push("writeSignal3{")
+					a(3)
+					log.push("}writeSignal3")
+				})
+				log.push("}subclock")
+
+				a(4)
+				a(5)
+			})
+			log.push("}batch")
+
+			assert.strictEqual(log.join(" "), "A{ }A B{ }B batch{ subclock{ writeSignal2{ A{ }A B{ }B }writeSignal2 writeSignal3{ A{ }A B{ }B }writeSignal3 }subclock A{ }A B{ }B }batch")
+		})
+
+		it("disappears on cleanup", () => {
+			const owner = new Owner(null)
+			const signal = createSignal(0)
+
+			let order = ""
+			runWithOwner(owner, () => {
+				onUpdate(signal, (val) => {
+					order += `val=${val} `
+				})
+			})
+
+			order += "write(1){"
+			signal(1)
+			order += "}write(1) "
+
+			order += "destroy "
+			owner.destroy()
+
+			order += "write(2){"
+			signal(2)
+			order += "}write(2) "
+
+			assert.strictEqual(order, "write(1){val=1 }write(1) destroy write(2){}write(2) ")
+		})
+
+		it("resets custom states", () => {
+			const log = []
+			let customState = 0
+			const sig = createSignal("a")
+
+			log.push(`init ${customState};`)
+			const restoreCustomState = () => {
+				const saved = customState
+				return () => {
+					customState = saved
+				}
+			}
+
+			addCustomStateStasher(restoreCustomState)
+
+			customState = 1
+
+			log.push(`outer ${customState};`)
+			createRoot(() => {
+				customState = 2
+
+				onUpdate(sig, (newValue) => {
+					log.push(`onUpdate1 val=${newValue} state=${customState};`)
+					customState = 10
+				})
+
+				customState = 3
+
+				onUpdate(sig, (newValue) => {
+					log.push(`onUpdate2 val=${newValue} state=${customState};`)
+					customState = 11
+				})
+
+				log.push("write b;")
+				sig("b")
+				log.push(`after write state = ${customState};`)
+
+				customState = 4
+
+				log.push("write c;")
+				sig("c")
+				log.push(`after write state = ${customState};`)
+			})
+
+			log.push(`end ${customState};`)
+
+			assert.strictEqual(log.join(" "), "init 0; outer 1; write b; onUpdate1 val=b state=0; onUpdate2 val=b state=0; after write state = 3; write c; onUpdate1 val=c state=0; onUpdate2 val=c state=0; after write state = 4; end 1;")
+		})
+	})
+
 	})
 
 	describe("onWrite", () => {

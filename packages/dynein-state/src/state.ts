@@ -532,11 +532,28 @@ export function createEffect(fn: () => (void | Promise<void>)): Owner {
 }
 
 export function onUpdate<T>(signal: () => T, listener: (newValue: T) => void): Owner {
+	/** STATE CHANGES (inside listener, relative to their values at listener creation)
+	 * assertedStatic 	       false
+	 * collectingDependencies  false
+	 * currentOwner            child (reset on rerun)
+	 * currentEffect           undefined
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   NOT PRESERVED
+	 * startDelayed            true
+	 * custom states           null/reset
+	 *
+	 * (notice this is the same as onWrite)
+	 */
+
 	let isFirst = true
 	return createEffect(() => {
 		const newValue = signal()
 		if (!isFirst) {
-			untrack(() => {
+			// This will be reset after the effect exits, so we don't need to bother resetting it here
+			currentEffect = undefined
+			collectingDependencies = false
+
+			batch(() => {
 				listener(newValue)
 			})
 		}
