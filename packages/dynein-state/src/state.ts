@@ -94,6 +94,17 @@ export function untrack<T>(inner: () => T): T {
 }
 
 export function retrack<T>(inner: () => T): T {
+	/** STATE CHANGES
+	 * assertedStatic 	       false
+	 * collectingDependencies  true
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           (preserve)
+	 */
+
 	return updateState(false, true, currentOwner, currentEffect, inner)
 }
 
