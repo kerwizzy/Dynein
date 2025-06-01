@@ -1899,6 +1899,22 @@ describe("@dynein/state", () => {
 			assert.strictEqual(calledWithVal, 12)
 		})
 
+		it("signal value is not updated before inner", () => {
+			const signal = createSignal(0)
+			let order = ""
+			createRoot(() => {
+				onWrite(signal, (val) => {
+					order += `v=${val}, s=${signal()} `
+				})
+			})
+
+			order += "set signal = 1{ "
+			signal(1)
+			order += "}set "
+
+			assert.strictEqual(order, "set signal = 1{ v=1, s=0 }set ")
+		})
+
 		it("executes immediately before write exits", () => {
 			const signal = createSignal(0)
 			let order = ""
@@ -1918,6 +1934,73 @@ describe("@dynein/state", () => {
 			order += "}batch "
 
 			assert.strictEqual(order, "init batch{write{run 1 }write }batch ")
+		})
+
+		it("executes before effects (1)", () => {
+			const signal = createSignal(0)
+			let order = ""
+			createRoot(() => {
+				order += "init "
+				onWrite(signal, (val) => {
+					order += "onWrite " + val + " "
+				})
+
+				createEffect(() => {
+					order += "createEffect " + signal() + " "
+				})
+			})
+
+			order += "batch{"
+			batch(() => {
+				order += "write{"
+				signal(1)
+				order += "}write "
+			})
+			order += "}batch "
+
+			assert.strictEqual(order, "init createEffect 0 batch{write{onWrite 1 }write createEffect 1 }batch ")
+		})
+
+		it("executes before effects (2)", () => {
+			const signal = createSignal(0)
+			let order = ""
+			createRoot(() => {
+				order += "init "
+				onWrite(signal, (val) => {
+					order += "onWrite " + val + " "
+				})
+
+				createEffect(() => {
+					order += "createEffect " + signal() + " "
+				})
+			})
+
+
+			order += "write{"
+			signal(1)
+			order += "}write "
+
+			assert.strictEqual(order, "init createEffect 0 write{onWrite 1 createEffect 1 }write ")
+		})
+
+		it("executes after toSignal setter", () => {
+			let order = ""
+
+			const signal = toSignal(() => 0, (v) => {
+				order += `setter ${v} `
+			})
+			createRoot(() => {
+				order += "init "
+				onWrite(signal, (val) => {
+					order += "onWrite " + val + " "
+				})
+			})
+
+			order += "write{"
+			signal(1)
+			order += "}write "
+
+			assert.strictEqual(order, "init write{onWrite 1 setter 1 }write ")
 		})
 
 		it("catches errors", () => {
@@ -2041,6 +2124,7 @@ describe("@dynein/state", () => {
 
 			assert.strictEqual(state.collectingDependencies, false)
 			assert.strictEqual(state.assertedStatic, false)
+			assert.strictEqual(state.currentEffect, undefined)
 		})
 
 		it("executes secondary writes in a batch", () => {
@@ -2153,6 +2237,55 @@ describe("@dynein/state", () => {
 			order += "}write(2) "
 
 			assert.strictEqual(order, "write(1){val=1 }write(1) destroy write(2){}write(2) ")
+		})
+
+		it("resets custom states", () => {
+			const log = []
+			let customState = 0
+			const sig = createSignal("a")
+
+			log.push(`init ${customState};`)
+			const restoreCustomState = () => {
+				const saved = customState
+				return () => {
+					customState = saved
+				}
+			}
+
+			addCustomStateStasher(restoreCustomState)
+
+			customState = 1
+
+			log.push(`outer ${customState};`)
+			createRoot(() => {
+				customState = 2
+
+				onWrite(sig, (newValue) => {
+					log.push(`onWrite1 val=${newValue} state=${customState};`)
+					customState = 10
+				})
+
+				customState = 3
+
+				onWrite(sig, (newValue) => {
+					log.push(`onWrite2 val=${newValue} state=${customState};`)
+					customState = 11
+				})
+
+				log.push("write b;")
+				sig("b")
+				log.push(`after write state = ${customState};`)
+
+				customState = 4
+
+				log.push("write c;")
+				sig("c")
+				log.push(`after write state = ${customState};`)
+			})
+
+			log.push(`end ${customState};`)
+
+			assert.strictEqual(log.join(" "), "init 0; outer 1; write b; onWrite1 val=b state=0; onWrite2 val=b state=0; after write state = 3; write c; onWrite1 val=c state=0; onWrite2 val=c state=0; after write state = 4; end 1;")
 		})
 	})
 

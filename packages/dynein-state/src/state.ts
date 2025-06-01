@@ -355,22 +355,31 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 				)
 			}
 
-			setter(newVal!)
-
 			//@ts-ignore
 			if (signalWrapper[onWriteListenersFunctionsSymbol].length > 0) {
-				assertedStatic = false
-				collectingDependencies = false
-				for (const fn of customRestoreBaseStateFunctions) {
-					fn()
-				}
-				const old_currentOwner = currentOwner
-				const old_currentEffect = currentEffect
-				const old_contextValues = contextValues
-
 				// Notice that currentUpdateQueue is preserved while all the other state values are reset
 				// to the base values (as if run in the root event loop), or else to the values saved
 				// when the onWrite was created.
+				//
+				// (This is the same as UpdateQueue.tick())
+				const old_assertedStatic = assertedStatic
+				const old_collectingDependencies = collectingDependencies
+				const old_currentOwner = currentOwner
+				const old_currentEffect = currentEffect
+				const old_contextValues = contextValues
+				const restoreCustomStates = customStateStashers.map(stasher => stasher())
+
+				assertedStatic = false
+				collectingDependencies = false
+
+				// (Don't need to run these here because they are reset below)
+				// currentOwner = undefined
+				// contextValues = new Map()
+
+				for (const fn of customRestoreBaseStateFunctions) {
+					fn()
+				}
+
 				batch(() => {
 					currentEffect = undefined
 
@@ -398,6 +407,12 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 						//@ts-ignore
 						contextValues = signalWrapper[onWriteListenersContextValuesSymbol][i]
 
+						// TODO: is it safe to trust the creators of custom states to make sure that
+						// the functions they pass never throw?
+						for (const fn of customRestoreBaseStateFunctions) {
+							fn()
+						}
+
 						try {
 							listener(newVal!)
 						} catch (err) {
@@ -406,10 +421,17 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 					}
 				})
 
+				assertedStatic = old_assertedStatic
+				collectingDependencies = old_collectingDependencies
 				currentOwner = old_currentOwner
 				currentEffect = old_currentEffect
 				contextValues = old_contextValues
+				for (const fn of restoreCustomStates) {
+					fn()
+				}
 			}
+
+			setter(newVal!)
 		}
 		return newVal!
 	} as Signal<T>
@@ -431,6 +453,19 @@ export function toSignal<T>(getter: () => T, setter: (value: T) => void): Signal
 }
 
 export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) => void): void {
+	/** STATE CHANGES (inside listener, relative to their values at listener creation)
+	 * assertedStatic 	       false
+	 * collectingDependencies  false
+	 * currentOwner            child (reset on rerun)
+	 * currentEffect           null
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   NOT PRESERVED
+	 * startDelayed            true
+	 * custom states           null/reset
+	 *
+	 * (all the state changes are implemented above, not here)
+	 */
+
 	const owner = new Owner()
 
 	//@ts-ignore
@@ -448,6 +483,7 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 
 		if (idx === -1) {
 			console.warn("Unexpected internal state in onWrite listener cleanup")
+			return
 		}
 
 		// @ts-ignore
