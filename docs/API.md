@@ -19,6 +19,7 @@
 		* [toSignal](#dtosignal)
 		* [onUpdate](#donupdate)
 		* [createMemo](#dcreatememo)
+		* [createMuffled](#dcreatemuffled)
 	* [Contexts](#contexts)
 		* [createContext](#dcreatecontext)
 		* [runWithContext](#drunwithcontext)
@@ -323,6 +324,22 @@ function createMemo<T>(fn: () => T, fireWhenEqual: boolean = false): () => T {
 	return () => internalSignal();
 }
 ```
+
+### `D.createMuffled`
+
+```ts
+function createMuffled<T>(signal: Signal<T>): Signal<T>
+```
+
+Creates and returns a getter/setter pair (wrapped into the `Signal` interface) which allows writing to `signal` without causing an "echo".
+
+More specifically, if `muffled = createMuffled(signal)`:
+
+* Writing `muffled(value)` will _not_ cause effects which depend on `muffled()` to re-run. However, it _will_ update the value of `signal` and cause effects which depend on `signal()` to re-run.
+* Writing `signal(value)` _will_ cause effects which depend on `muffled()` to re-run.
+* `muffled()` will always equal `signal()`.
+
+You will probably not need to use this function very often, but it can be useful when implementing other utility primitives. It's often included in code which automatically serializes a complicated reactive structure to flat representation such as a JSON string written to localStorage.
 
 ## Advanced State Functions
 

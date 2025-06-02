@@ -2144,6 +2144,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(log.join(" "), "init 0; outer 1; write b; onUpdate1 val=b state=0; onUpdate2 val=b state=0; after write state = 3; write c; onUpdate1 val=c state=0; onUpdate2 val=c state=0; after write state = 4; end 1;")
 		})
 	})
+
 	describe("createMemo", () => {
 		it("fires only if memoed function returns the same value", () => {
 			const signal1 = createSignal(0, true)
@@ -2319,6 +2320,224 @@ describe("@dynein/state", () => {
 		})
 	})
 
+	describe("createMuffled", () => {
+		it("does not emit basic echo", () => {
+			createRoot(() => {
+				const sig = createSignal(0)
+				const muffled = createMuffled(sig)
+
+				const log = []
+
+				createEffect(() => {
+					log.push(`muffled = ${muffled()};`)
+				})
+
+				createEffect(() => {
+					log.push(`sig = ${sig()};`)
+				})
+
+				log.push("set muffled = 1;")
+				muffled(1)
+
+				log.push("set sig = 2;")
+				sig(2)
+
+				assert.strictEqual(log.join(" "), `muffled = 0; sig = 0; set muffled = 1; sig = 1; set sig = 2; sig = 2; muffled = 2;`)
+			})
+		})
+
+		it("does not emit muffled onWrite from signal write", () => {
+			createRoot(() => {
+				const sig = createSignal(0)
+				const muffled = createMuffled(sig)
+
+				let log = []
+
+				createEffect(() => {
+					log.push(`sig effect = ${sig()};`)
+				})
+
+				onWrite(sig, (v) => {
+					log.push(`sig write = ${v};`)
+				})
+
+				createEffect(() => {
+					log.push(`muffled effect = ${muffled()};`)
+				})
+
+				onWrite(muffled, (v) => {
+					log.push(`muffled write = ${v};`)
+				})
+
+				log.push("set sig = 1;")
+				sig(1)
+
+				log.push("set muffled = 2;")
+				muffled(2)
+
+				const log1 = log.join(" ")
+				log = []
+
+				log.push("set sig = 3;")
+				sig(3)
+
+				log.push("set sig = 4;")
+				sig(4)
+
+				const log2 = log.join(" ")
+
+				assert.strictEqual(log1, `sig effect = 0; muffled effect = 0; set sig = 1; sig write = 1; sig effect = 1; muffled effect = 1; set muffled = 2; muffled write = 2; sig write = 2; sig effect = 2;`)
+
+				assert.strictEqual(log2, `set sig = 3; sig write = 3; sig effect = 3; muffled effect = 3; set sig = 4; sig write = 4; sig effect = 4; muffled effect = 4;`)
+			})
+		})
+
+		it("fires when signal was changed not by a write", () => {
+			createRoot(() => {
+				const inner = createSignal(0)
+				const sig = toSignal(() => inner(), (v) => inner(v))
+				const muffled = createMuffled(sig)
+
+				const log = []
+
+				createEffect(() => {
+					log.push(`sig effect = ${sig()};`)
+				})
+
+				onWrite(sig, (v) => {
+					log.push(`sig write = ${v};`)
+				})
+
+				createEffect(() => {
+					log.push(`muffled effect = ${muffled()};`)
+				})
+
+				onWrite(muffled, (v) => {
+					log.push(`muffled write = ${v};`)
+				})
+
+				log.push("set inner = 1;")
+				inner(1)
+
+				assert.strictEqual(log.join(" "), `sig effect = 0; muffled effect = 0; set inner = 1; sig effect = 1; muffled effect = 1;`)
+			})
+		})
+
+		it("doesn't break batching (1)", () => {
+			createRoot(() => {
+				const sig = createSignal(0)
+				const muffled = createMuffled(sig)
+
+				const log = []
+
+				createEffect(() => {
+					log.push(`sig = ${sig()};`)
+				})
+
+				createEffect(() => {
+					log.push(`muffled = ${muffled()};`)
+				})
+
+				batch(() => {
+					muffled(1)
+					muffled(2)
+					muffled(3)
+				})
+
+				assert.strictEqual(log.join(" "), `sig = 0; muffled = 0; sig = 3;`)
+			})
+		})
+
+		it("doesn't break batching (2)", () => {
+			createRoot(() => {
+				const sig = createSignal(0)
+				const muffled = createMuffled(sig)
+
+				const log = []
+
+				createEffect(() => {
+					log.push(`sig = ${sig()};`)
+				})
+
+				createEffect(() => {
+					log.push(`muffled = ${muffled()};`)
+				})
+
+				batch(() => {
+					sig(1)
+					sig(2)
+					sig(3)
+				})
+
+				assert.strictEqual(log.join(" "), `sig = 0; muffled = 0; sig = 3; muffled = 3;`)
+			})
+		})
+
+		it("handles setter sometimes throwing", () => {
+			createRoot(() => {
+				let throwOnNext = false
+
+				const inner = createSignal(0)
+
+				const sig = toSignal(() => inner(), (v) => {
+					if (throwOnNext) {
+						throwOnNext = false
+						throw new Error("Test")
+					}
+
+					inner(v)
+				})
+
+				const muffled = createMuffled(sig)
+
+				const log = []
+
+				createEffect(() => {
+					log.push(`sig = ${sig()};`)
+				})
+
+				createEffect(() => {
+					log.push(`muffled = ${muffled()};`)
+				})
+
+				log.push("set sig = 1;")
+				sig(1)
+
+				log.push("set muffled = 2;")
+				muffled(2)
+
+				throwOnNext = true
+				try {
+					log.push("try set muffled = 3 (but throw);")
+					muffled(3)
+				} catch {
+
+				}
+
+				log.push("set sig = 4;")
+				sig(4)
+
+				assert.strictEqual(log.join(" "), `sig = 0; muffled = 0; set sig = 1; sig = 1; muffled = 1; set muffled = 2; sig = 2; try set muffled = 3 (but throw); set sig = 4; sig = 4; muffled = 4;`)
+			})
+		})
+
+		it("doesn't fire when writing the same value", () => {
+			createRoot(() => {
+				const sig = createSignal(0)
+				const muffled = createMuffled(sig)
+
+				const log = []
+
+				createEffect(() => {
+					log.push(`muffled = ${muffled()};`)
+				})
+
+				sig(0)
+				muffled(1)
+
+				assert.strictEqual(log.join(" "), `muffled = 0;`)
+			})
+		})
 	})
 
 	describe("onWrite", () => {

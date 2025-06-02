@@ -610,6 +610,46 @@ export function createMemo<T>(fn: () => T): () => T {
 	}
 }
 
+export function createMuffled<T>(signal: Signal<T>): Signal<T> {
+	const fire = createSignal(true, true)
+	let updateFromMuffled = false
+	let triggeringOnWrite = false
+	let shouldFire = false
+
+	const muffled = toSignal(() => {
+		fire()
+		return sample(signal)
+	}, (val: T) => {
+		if (triggeringOnWrite) {
+			return
+		}
+
+
+		if (currentUpdateQueue.startDelayed) {
+			updateFromMuffled = true
+			currentUpdateQueue.onTickEnd.add(() => {
+				updateFromMuffled = false
+			})
+			signal(val)
+		} else {
+			updateFromMuffled = true
+			try {
+				signal(val)
+			} finally {
+				updateFromMuffled = false
+			}
+		}
+	})
+
+	onUpdate(signal, (newValue) => {
+		if (updateFromMuffled) {
+			return
+		}
+
+		fire(true)
+	})
+
+	return muffled
 }
 
 export function onCleanup(fn: () => void) {
