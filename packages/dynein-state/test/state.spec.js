@@ -3279,6 +3279,35 @@ describe("@dynein/state", () => {
 			})
 		})
 
+		it("finishes updates before returning", () => {
+			const a = createSignal(0)
+			const b = createSignal(0)
+
+			let log = ""
+
+			log += "init "
+			createRoot(() => {
+				createEffect(() => {
+					log += `effect ${a()} ${b()} `
+				})
+			})
+
+			log += "batch{ "
+			batch(() => {
+				log += "write a=1 "
+				a(1)
+
+				log += "write b=1 "
+				b(1)
+
+				log += "write a=2 "
+				a(2)
+			})
+			log += "}batch "
+
+			assert.strictEqual(log, "init effect 0 0 batch{ write a=1 write b=1 write a=2 effect 2 1 }batch ")
+		})
+
 		it("passes errors", () => {
 			assert.throws(() => {
 				batch(() => {

@@ -686,6 +686,16 @@ export function onCleanup(fn: () => void) {
 }
 
 export function batch(fn: () => void) {
+	/** STATE CHANGES
+	 * assertedStatic 	       (preserve)
+	 * collectingDependencies  (preserve)
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            true
+	 * custom states           (preserve)
+	 */
 	currentUpdateQueue.delayStart(fn)
 }
 
