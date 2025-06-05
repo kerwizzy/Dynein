@@ -48,28 +48,14 @@ function replacementArea(start: Node, end: Node, setupReplacements: (replaceInne
 }
 
 function setAttrOrProp(el: SVGElement | HTMLElement, name: string, val: any) {
-	if (name === "style" && typeof val === "object") {
-		for (const styleKey in val) {
-			const styleVal = val[styleKey]
-			if (typeof styleVal === "function") {
-				createEffect(() => {
-					const rawVal = styleVal() ?? ""
-					el.style.setProperty(styleKey, rawVal)
-				})
-			} else {
-				el.style.setProperty(styleKey, styleVal)
-			}
-		}
+	if (el.namespaceURI === "http://www.w3.org/2000/svg" || name.startsWith("data-") || name.startsWith("aria-")) {
+		el.setAttribute(name, val)
 	} else {
-		if (el.namespaceURI === "http://www.w3.org/2000/svg" || name.startsWith("data-") || name.startsWith("aria-")) {
-			el.setAttribute(name, val)
-		} else {
-			if (name === "class") {
-				name = "className"
-			}
-			//@ts-ignore
-			el[name] = val
+		if (name === "class") {
+			name = "className"
 		}
+		//@ts-ignore
+		el[name] = val
 	}
 }
 
