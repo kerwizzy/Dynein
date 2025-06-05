@@ -27,6 +27,9 @@ function replacementArea(start: Node, end: Node, setupReplacements: (replaceInne
 	onCleanup(() => {
 		destroyed = true
 	})
+
+	const parentNode = start.parentNode
+
 	setupReplacements(<T>(inner: () => T) => {
 		if (!destroyed) {
 			if (!start.parentNode) {
@@ -41,7 +44,7 @@ function replacementArea(start: Node, end: Node, setupReplacements: (replaceInne
 		}
 
 		isFirst = false
-		return setInsertionState(start.parentNode, end, destroyed, () => {
+		return setInsertionState(parentNode, end, () => {
 			return assertStatic(inner)
 		})
 	})
@@ -68,51 +71,44 @@ type ElementTagNameMapForNamespace = {
 // Internal variables and functions used when building DOM structures
 let insertTarget: Node | null = null
 let insertBeforeNode: Node | null = null
-let insertDisabled: boolean = false
 
 addCustomStateStasher(() => {
 	const old_insertTarget = insertTarget
 	const old_insertBeforeNode = insertBeforeNode
-	const old_insertDisabled = insertDisabled
 
 	return () => {
 		insertTarget = old_insertTarget
 		insertBeforeNode = old_insertBeforeNode
-		insertDisabled = old_insertDisabled
-		if (insertBeforeNode && !insertBeforeNode?.parentNode) {
-			insertDisabled = true
-		}
 	}
 })
 
 export function addNode<T extends Node>(node: T): T {
-	if (!insertDisabled) {
-		if (insertTarget === null) {
-			throw new Error("not rendering")
-		}
+	if (insertTarget === null) {
+		throw new Error("not rendering")
+	}
+	if (insertBeforeNode && insertBeforeNode.parentNode !== insertTarget) {
+		// Do nothing. The area we're in must have been destroyed since the end node is gone or moved
+	} else {
 		insertTarget.insertBefore(node, insertBeforeNode) // if insertBeforeNode is null, just added to end
 	}
+
 	return node
 }
 
 export function setInsertionState<T>(
 	parentNode: Node | null,
 	beforeNode: Node | null,
-	disableInsert: boolean,
 	inner: () => T
 ) {
 	const old_insertTarget = insertTarget
 	const old_insertBeforeNode = insertBeforeNode
-	const old_insertDisabled = insertDisabled
 	insertTarget = parentNode
 	insertBeforeNode = beforeNode
-	insertDisabled = disableInsert
 	try {
 		return inner()
 	} finally {
 		insertTarget = old_insertTarget
 		insertBeforeNode = old_insertBeforeNode
-		insertDisabled = old_insertDisabled
 	}
 }
 
@@ -204,7 +200,7 @@ function createAndInsertElement<
 	if (inner !== null) {
 		if (typeof inner === "function") {
 			//console.log(`<${tagName}>`)
-			setInsertionState(el, null, false, () => {
+			setInsertionState(el, null, () => {
 				inner(el)
 			})
 			//console.log(`</${tagName}>`)
@@ -294,7 +290,7 @@ export function addHTML(html: string): void {
 
 export function addText(val: Primitive | (() => Primitive)): Node {
 	const node = document.createTextNode("")
-	setInsertionState(null, null, false, () => {
+	setInsertionState(null, null, () => {
 		if (typeof val === "function") {
 			createEffect(() => {
 				node.textContent = stringify(val())
@@ -331,7 +327,7 @@ export function addPortal(parentNode: Node, beforeOrInner: Node | null | (() => 
 	})
 
 	assertStatic(() => {
-		setInsertionState(parentNode, endNode, false, inner)
+		setInsertionState(parentNode, endNode, inner)
 	})
 }
 
@@ -360,7 +356,7 @@ export function addAsyncReplaceable(
 		($r) => {
 			const saved = getOwner()
 			const owner = new Owner()
-			setInsertionState(null, null, false, () => {
+			setInsertionState(null, null, () => {
 				setupReplacements((inner) => {
 					owner.reset()
 					return runWithOwner(owner, () => {

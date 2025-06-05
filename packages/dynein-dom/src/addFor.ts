@@ -166,7 +166,7 @@ class ForListArea<T> {
 				newItemIndexSignals.push(itemIndexSignal)
 			}
 
-			setInsertionState(listParent, firstNodeAfterModifyRange, false, () => {
+			setInsertionState(listParent, firstNodeAfterModifyRange, () => {
 				runWithOwner(itemOwner, () => {
 					try {
 						this.render(item, itemIndexSignal)
