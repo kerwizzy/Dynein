@@ -209,7 +209,8 @@ function createAndInsertElement<
 		}
 	}
 
-	//special case to init selects properly. has to be done after options list added
+	//special case to init selects properly. This has to be done after the options list has been
+	// added by inner()
 	if (tagName === "select" && attrs && namespace === "xhtml") {
 		const specialSelectAttrs = ["value", "selectedIndex"]
 		for (const attr of specialSelectAttrs) {
