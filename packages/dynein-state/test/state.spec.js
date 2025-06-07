@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray } from "../built/state.js"
+import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, createMuffled, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray, addCustomStateStasher } from "../built/state.js"
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -3003,16 +3003,16 @@ describe("@dynein/state", () => {
 			})
 		})
 
-		it("restores current computation after throw", () => {
+		it("restores current effect after throw", () => {
 			createRoot(() => {
 				createEffect(() => {
-					const before = _getInternalState().currentOwnerOwner
+					const before = _getInternalState().currentEffect
 					try {
 						untrack(() => {
 							throw new Error("err")
 						})
 					} catch (err) { }
-					assert.strictEqual(_getInternalState().currentOwnerOwner, before)
+					assert.strictEqual(_getInternalState().currentEffect, before)
 				})
 			})
 		})
@@ -3178,7 +3178,7 @@ describe("@dynein/state", () => {
 	})
 
 	describe("toSignal", () => {
-		it("creates something portlike", () => {
+		it("creates something signallike", () => {
 			let setVal
 			let signal = toSignal(
 				() => 5,
@@ -3240,7 +3240,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(count, 2)
 		})
 
-		it("allows ports to update before the end of the batch", () => {
+		it("allows signals to update before the end of the batch", () => {
 			const a = createSignal(0)
 			const b = createSignal(0)
 			let count = 0
@@ -3260,7 +3260,7 @@ describe("@dynein/state", () => {
 		})
 
 
-		it("allows ports to update more than once", () => {
+		it("allows signals to update more than once", () => {
 			const a = createSignal(0)
 			const b = createSignal(0)
 			let count = 0
