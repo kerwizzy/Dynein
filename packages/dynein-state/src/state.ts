@@ -78,6 +78,18 @@ export function _getInternalState() {
 
 export { updateState as _updateState }
 
+
+/** STATE CHANGES (template)
+ * assertedStatic 	       x
+ * collectingDependencies  x
+ * currentOwner            x
+ * currentEffect           x
+ * contextValues           x
+ * currentUpdateQueue	   x
+ * startDelayed            x
+ * custom states           x
+ */
+
 export function untrack<T>(inner: () => T): T {
 	/** STATE CHANGES
 	 * assertedStatic 	       false
@@ -1103,10 +1115,10 @@ function restoreBaseState(leavingSynchronousRegion = true) {
 	contextValues = new Map()
 	currentUpdateQueue = rootUpdateQueue
 	rootUpdateQueue.startDelayed = false
-	rootUpdateQueue.start()
 	for (const fn of customRestoreBaseStateFunctions) {
 		fn()
 	}
+	rootUpdateQueue.start()
 }
 
 export function stateStashPromise<T>(promise: Promise<T>): Promise<T> {
