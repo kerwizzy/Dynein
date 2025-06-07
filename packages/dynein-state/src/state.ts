@@ -700,6 +700,16 @@ export function batch(fn: () => void) {
 }
 
 export function subclock(fn: () => void) {
+	/** STATE CHANGES
+	 * assertedStatic 	       (preserve)
+	 * collectingDependencies  (preserve)
+	 * currentOwner            (preserve)
+	 * currentEffect           (preserve)
+	 * contextValues           (preserve)
+	 * currentUpdateQueue	   NEW
+	 * startDelayed            false
+	 * custom states           (preserve)
+	 */
 	currentUpdateQueue.subclock(fn)
 }
 
