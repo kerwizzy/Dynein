@@ -698,31 +698,27 @@ describe("@dynein/state", () => {
 			/*
 
 
-			  1
+			  p1
 			/   \
-			A    B
+			A    B     Tick 1
 			|    |
-			2	 3
+			p2	 p3
 			|    |
-			C    |
-			|    |
-			4    |
-			\   /
-			  D
+			C -> D     Tick 2
 
 			Tick 0
-				Set 1
+				Set p1
 					Add A, B to Tick 1
 			Tick 1
 				Exec A
-					Set 2
+					Set p2
 						Add C to Tick 2
 				Exec B
-					Set 3
+					Set p3
 						Add D to Tick 2
 			Tick 2
 				Exec C
-					Set 4
+					Set p4
 						Try add D to Tick 3, but cancelled since already in Tick 2
 				Exec D
 			Tick 3
@@ -769,17 +765,13 @@ describe("@dynein/state", () => {
 			/*
 
 
-				1
+			  p1
 			/   \
-			A      B
-			|      |
-			2	   3
-			|      |
-			C      |
-			|      |
-			4      |
-			\   /
-				D
+			A    B		Tick 1
+			|    |
+			p2	 p3
+			|    |
+			C -> D     	Tick 2
 			*/
 
 			let order = ""
@@ -821,18 +813,17 @@ describe("@dynein/state", () => {
 
 			/*
 
-
-				1
+			  p1
 			/   \
-			A      B
-			|      |
-			2	   3
-			|      |
-			C      |
-			|      |
-			4      |
-			\   /
-				D
+			B    A		Tick 1
+			|    |
+			p3	 p2
+			|    |
+			D    C		Tick 2
+				 |
+				 p4
+				 |
+				 D		Tick 3
 			*/
 
 			let order = ""
