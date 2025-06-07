@@ -787,6 +787,7 @@ class UpdateQueue {
 				assertedStatic = false
 				collectingDependencies = false
 				currentOwner = undefined
+				currentEffect = undefined
 				contextValues = new Map()
 				for (const fn of customRestoreBaseStateFunctions) {
 					fn()
