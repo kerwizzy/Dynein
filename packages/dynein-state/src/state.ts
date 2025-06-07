@@ -853,7 +853,7 @@ class UpdateQueue {
 	}
 
 	schedule(fn: () => void) {
-		if (this.ticking && this.thisTick.has(fn)) {
+		if (this.thisTick.has(fn)) {
 			// if this is already scheduled on the current tick but not started yet, don't schedule it
 			// again on the next tick
 			return
