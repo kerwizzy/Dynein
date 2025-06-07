@@ -626,7 +626,6 @@ export function createMuffled<T>(signal: Signal<T>): Signal<T> {
 	const fire = createSignal(true, true)
 	let updateFromMuffled = false
 	let triggeringOnWrite = false
-	let shouldFire = false
 
 	const muffled = toSignal(() => {
 		fire()
@@ -635,7 +634,6 @@ export function createMuffled<T>(signal: Signal<T>): Signal<T> {
 		if (triggeringOnWrite) {
 			return
 		}
-
 
 		if (currentUpdateQueue.startDelayed) {
 			updateFromMuffled = true
@@ -653,7 +651,7 @@ export function createMuffled<T>(signal: Signal<T>): Signal<T> {
 		}
 	})
 
-	onUpdate(signal, (newValue) => {
+	onUpdate(signal, () => {
 		if (updateFromMuffled) {
 			return
 		}
