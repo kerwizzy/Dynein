@@ -829,20 +829,13 @@ class UpdateQueue {
 	subclock(fn: () => void) {
 		this.unschedule(fn) // Important for having Effect.forceExec not cause unnecessary executions
 
-		const old_assertedStatic = assertedStatic
-		const old_collectingDependencies = collectingDependencies
-
 		const oldUpdateQueue = currentUpdateQueue
 		currentUpdateQueue = new UpdateQueue(this)
-		assertedStatic = false
-		collectingDependencies = false
 
 		try {
 			fn()
 		} finally {
 			currentUpdateQueue = oldUpdateQueue
-			assertedStatic = old_assertedStatic
-			collectingDependencies = old_collectingDependencies
 		}
 	}
 
