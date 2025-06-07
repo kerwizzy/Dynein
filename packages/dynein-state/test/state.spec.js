@@ -3920,8 +3920,8 @@ describe("@dynein/state", () => {
 
 			createRoot(() => {
 				runWithContext(ctx, "b", () => {
-					onWrite(sig, () => {
-						log += `sig = ${sig()}, ctx = ${useContext(ctx)}; `
+					onWrite(sig, (val) => {
+						log += `val=${val}, sig = ${sig()}, ctx = ${useContext(ctx)}; `
 					})
 				})
 			})
@@ -3930,7 +3930,7 @@ describe("@dynein/state", () => {
 			log += "write 1; "
 			sig(1)
 
-			assert.strictEqual(log, "write 0; sig = 0, ctx = b; write 1; sig = 1, ctx = b; ")
+			assert.strictEqual(log, "write 0; val=0, sig = 0, ctx = b; write 1; val=1, sig = 0, ctx = b; ")
 		})
 
 		it("context values are captured by onCleanup", () => {
