@@ -160,7 +160,7 @@ export function createRoot<T>(inner: (dispose: () => void) => T): T {
 	const saved_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
 	const restore = getRestoreAllStateFunction()
 	try {
-		restoreBaseState()
+		restoreBaseState(false)
 		currentUpdateQueue = saved_currentUpdateQueue
 		currentUpdateQueue.startDelayed = saved_currentUpdateQueue_startDelayed
 		const owner = new Owner(null)
@@ -874,10 +874,10 @@ class Effect extends Owner {
 	private readonly savedContextValues: Map<Context<any>, any>
 	readonly sources: Set<DependencyHandler<any>>
 	private readonly boundExec: () => void
-	private executing: boolean = false
-	private destroyPending: boolean = false
-	private asyncExec: boolean = false
+	destroyPending: boolean = false
 	execPending: boolean = false
+	executing: boolean = false
+	synchronousExecutionDepth = 0
 
 	constructor(fn: () => (void | Promise<void>)) {
 		super()
@@ -889,6 +889,18 @@ class Effect extends Owner {
 	}
 
 	private exec() {
+		this.execPending = false
+
+		// TODO: does there need to be an async version of this somehow...? Invoking async effects
+		// while executing is fine because it freezes/discards existing executions
+		if (this.synchronousExecutionDepth > 0) {
+			console.error("Nested effect self-triggering detected. This is not supported because it can lead to unexpected behavior. The effect will now be destroyed and further executions will be blocked.")
+			this.synchronousExecutionDepth = 0
+			this.executing = false
+			this.destroy()
+			return
+		}
+
 		if (this.isDestroyed) {
 			return
 		}
@@ -898,7 +910,7 @@ class Effect extends Owner {
 		const oldStartDelayed = currentUpdateQueue.startDelayed
 		cachedUpdateQueue.startDelayed = true
 
-		this.reset() // Necessary to make the "effect created inside an exec-pending effect" test pass
+		this.reset()
 		for (const src of this.sources) {
 			src.drains.delete(this)
 		}
@@ -912,26 +924,39 @@ class Effect extends Owner {
 			fn()
 		}
 
+		let asyncExec = false
 		try {
-			this.executing = true
-			this.execPending = false
 			contextValues = this.savedContextValues
 
+			this.synchronousExecutionDepth++
+			this.executing = true
 			const maybePromise = updateState(false, true, this, this, this.fn)
-			this.asyncExec = maybePromise instanceof Promise
-			if (this.asyncExec) {
+			asyncExec = maybePromise instanceof Promise
+
+			if (asyncExec) {
 				(maybePromise as any).finally(() => {
-					this.finishExec()
+					this.executing = false
+					if (this.destroyPending) {
+						this.destroy()
+					}
 				})
 			}
 		} finally {
-			contextValues = oldContextValues
-			if (!this.asyncExec) {
-				this.finishExec()
+			this.synchronousExecutionDepth--
+
+			if (!asyncExec) {
+				this.executing = false
 			}
 
+			contextValues = oldContextValues
 			for (const fn of restoreCustomStates) {
 				fn()
+			}
+
+			// this applies even if asyncExec is true
+			if (this.destroyPending) {
+				this.executing = false
+				this.destroy()
 			}
 
 			cachedUpdateQueue.startDelayed = oldStartDelayed
@@ -939,23 +964,33 @@ class Effect extends Owner {
 		}
 	}
 
-	private finishExec() {
-		this.executing = false
-		if (this.destroyPending) {
-			this.destroy()
-		}
-	}
-
-	destroy() {
-		for (const src of this.sources) {
-			src.drains.delete(this)
+	destroy(force: boolean = false) {
+		if (this.sources.size > 0) {
+			for (const src of this.sources) {
+				src.drains.delete(this)
+			}
+			this.sources.clear() // make garbage collection easier by removing more links
 		}
 
-		if (this.executing) {
-			this.reset()
+		if (this.executing && !force) {
 			this.destroyPending = true
+			this.reset()
 		} else {
 			super.destroy()
+		}
+
+		// This may not actually be necessary, but it probably doesn't matter much for performance and
+		// it's a safegaurd against memory leaks
+		if (this.sources.size > 0) {
+			for (const src of this.sources) {
+				src.drains.delete(this)
+			}
+			this.sources.clear() // make garbage collection easier by removing more links
+		}
+
+		if (this.isDestroyed) {
+			this.executing = false
+			this.synchronousExecutionDepth = 0
 		}
 	}
 
@@ -982,7 +1017,7 @@ class DependencyHandler<T> {
 	}
 
 	read(): T {
-		if (collectingDependencies && currentEffect && !assertedStatic) {
+		if (collectingDependencies && currentEffect && !assertedStatic && !currentEffect.destroyPending) {
 			currentEffect.sources.add(this)
 			this.drains.add(currentEffect)
 		} else if (assertedStatic) {
@@ -1046,9 +1081,16 @@ function getRestoreAllStateFunction() {
 	}
 }
 
-function restoreBaseState() {
+function restoreBaseState(leavingSynchronousRegion = true) {
+	// leavingSynchronousRegion is true when called from queueMicrotask below, but false when called
+	// from createRoot
+
 	///*DEBUG*/console.log("restore base state")
 
+	// At the end of a synchronous execution run
+	if (leavingSynchronousRegion && currentEffect && currentEffect.destroyPending) {
+		currentEffect.destroy(true)
+	}
 
 	// Really restore *everything*, because this is called below in stateStashPromise to return
 	// control to the main event loop after leaving a Dynein-wrapped code block.
@@ -1071,8 +1113,6 @@ export function stateStashPromise<T>(promise: Promise<T>): Promise<T> {
 	const restore = getRestoreAllStateFunction()
 	const maybeResolve = Promise.withResolvers<T>()
 
-	// if the area or execution run that this was called in gets destroyed, simply freeze
-	// further execution by not resolving the output promise
 	let destroyed = false
 	if (currentOwner) {
 		onCleanup(() => {
@@ -1081,6 +1121,8 @@ export function stateStashPromise<T>(promise: Promise<T>): Promise<T> {
 	}
 
 	Promise.allSettled([promise]).then(([result]) => {
+		// if the area or execution run that this was called in gets destroyed, simply freeze
+		// further execution by not resolving the output promise
 		if (destroyed) {
 			return
 		}

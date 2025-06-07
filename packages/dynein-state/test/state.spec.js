@@ -588,6 +588,37 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "run outer run inner 1 outer destroy{cleanup outer cleanup inner 1 }outer destroy run inner 2 outer done cleanup inner 2 ")
 		})
 
+		it("blocks further dependency collection during cleanup", () => {
+			const owner = new Owner(null)
+			const log = []
+			const sig = createSignal(0)
+			runWithOwner(owner, () => {
+				createEffect(() => {
+					log.push("enter effect")
+					owner.destroy()
+					log.push("read sig")
+					sig()
+
+					if (sig() === 0) {
+						log.push("subclock")
+						subclock(() => {
+							log.push("set sig = 1")
+							sig(1)
+							log.push("done set sig = 1")
+						})
+						log.push("done subclock")
+					}
+					log.push("leave effect")
+				})
+
+				log.push("set sig = 2")
+				sig(2)
+				log.push("done")
+			})
+
+			assert.strictEqual(log.join("; "), "enter effect; read sig; subclock; set sig = 1; done set sig = 1; done subclock; leave effect; set sig = 2; done")
+		})
+
 		it("calls cleanup", () => {
 			let innerWatch = createSignal(true)
 			let signal = createSignal(0)
@@ -1123,6 +1154,50 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "A{1}A s{1 a++{}a++ b++{Sclock{B{1}B A{2}A s{2 a++{}a++ b++{Sclock{B{2}B A{3}A s{3 }s ")
 		})
 
+		it("handles nested executions (from subclock) reasonably", () => {
+			const sig = createSignal("a")
+			let log = []
+
+			createRoot(() => {
+				createEffect(() => {
+					const sigValue = sig()
+					log.push(`create onCleanup1 (${sigValue})`)
+					onCleanup(() => {
+						log.push(`onCleanup1 (${sigValue})`)
+					})
+
+					sig()
+					log.push(`effect sig = ${sig()}`)
+					if (sig() === "a") {
+						subclock(() => {
+							log.push("set sig = b")
+							sig("b")
+							log.push("done set sig = b")
+						})
+					}
+
+					log.push(`create onCleanup2 (${sigValue})`)
+					try {
+						onCleanup(() => {
+							log.push(`onCleanup2 (${sigValue})`)
+						})
+					} catch (err) {
+						log.push("err: " + err.message)
+					}
+
+					log.push("exit effect")
+				})
+				log.push("done")
+			})
+
+			assert.strictEqual(log.join("; "), "create onCleanup1 (a); effect sig = a; set sig = b; onCleanup1 (a); done set sig = b; create onCleanup2 (a); err: Can't add to destroyed context.; exit effect; done")
+			log = []
+
+			// shouldn't do anything since the effect has been destroyed
+			sig("c")
+			assert.strictEqual(log.join("; "), ``)
+		})
+
 		// See https://github.com/adamhaile/S/issues/32
 		// Basically, the data().length shouldn't be run when data() is null
 		it("Sjs issue 32", () => {
@@ -1188,16 +1263,7 @@ describe("@dynein/state", () => {
 			assert.strictEqual(order, "cleanup inner(1) run inner(1) ")
 		})
 
-		// This test maybe isn't the most preferable behavior, but its an edge case and
-		// there doesn't seem to be an easy way to fix it. In real world-scenarios where you have
-		// a self-triggering effect like this (e.g., effect checks a precondition and then
-		// fixes it), you should probably return at the end of the `if (!a()) {` block and then
-		// the inner effect wouldn't be created twice.
-		//
-		// Maybe I'll revisit this in the future, but for now this case is undefined behavior,
-		// and tested here to document it and make it easy to notice if some future edit to Dynein
-		// changes it.
-		it("executes but doesn't create an effect created inside an exec-pending effect (subclock) (undefined behavior)", () => {
+		it("executes but doesn't create an effect created inside an exec-pending effect (subclock)", () => {
 			const a = createSignal(0)
 			const b = createSignal(0)
 
@@ -1219,17 +1285,21 @@ describe("@dynein/state", () => {
 					}
 
 					order += `create inner(${id}) `
-					createEffect(() => {
-						b()
-						order += `run inner(${id}) `
-					})
+					try {
+						createEffect(() => {
+							b()
+							order += `run inner(${id}) `
+						})
+					} catch (err) {
+						order += "err: " + err.message + " "
+					}
 					order += `} outer(${id}) `
 				})
 			})
-			assert.strictEqual(order, "outer(0) { set a { cleanup outer(0) outer(1) { create inner(1) run inner(1) } outer(1) } set a create inner(0) run inner(0) } outer(0) ")
+			assert.strictEqual(order, "outer(0) { set a { cleanup outer(0) } set a create inner(0) err: Can't add to destroyed context. } outer(0) ")
 			order = ""
 			b(1)
-			assert.strictEqual(order, "run inner(1) run inner(0) ")
+			assert.strictEqual(order, "")
 		})
 
 		it("doesn't reexecute a destroy-pending watcher", () => {
@@ -1407,6 +1477,11 @@ describe("@dynein/state", () => {
 			createRoot(() => {
 				createEffect(async () => {
 					const initA = a()
+
+					onCleanup(() => {
+						order += `onCleanup(${initA}) `
+					})
+
 					order += `a = ${initA} `
 					await $s(sleep(20))
 					order += `done(${initA}) `
@@ -1415,42 +1490,38 @@ describe("@dynein/state", () => {
 
 			assert.strictEqual(order, "a = 0 ")
 			a(1)
-			assert.strictEqual(order, "a = 0 a = 1 ")
+			assert.strictEqual(order, "a = 0 onCleanup(0) a = 1 ")
 			await sleep(5)
 			a(2)
-			assert.strictEqual(order, "a = 0 a = 1 a = 2 ")
+			assert.strictEqual(order, "a = 0 onCleanup(0) a = 1 onCleanup(1) a = 2 ")
 			await sleep(30)
-			assert.strictEqual(order, "a = 0 a = 1 a = 2 done(2) ")
-			await sleep(10)
-			assert.strictEqual(order, "a = 0 a = 1 a = 2 done(2) ")
+			assert.strictEqual(order, "a = 0 onCleanup(0) a = 1 onCleanup(1) a = 2 done(2) ")
+			await sleep(20)
+			assert.strictEqual(order, "a = 0 onCleanup(0) a = 1 onCleanup(1) a = 2 done(2) ")
 		})
 
-		it("calls onCleanup as expected", async () => {
-			const a = createSignal(0)
+		it("calls onCleanup immediately after a destroyed synchronous section", async () => {
+			const owner = new Owner(null)
+			const log = []
 
-			let order = ""
-			createRoot(() => {
+			runWithOwner(owner, () => {
 				createEffect(async () => {
-					onCleanup(() => {
-						order += "onCleanup "
-					})
-					const initA = a()
-					order += `a = ${initA} `
-					await $s(sleep(20))
-					order += `done(${initA}) `
-				})
-			})
+					log.push("init")
+					owner.destroy()
+					log.push("after destroy")
 
-			assert.strictEqual(order, "a = 0 ")
-			a(1)
-			assert.strictEqual(order, "a = 0 onCleanup a = 1 ")
-			await sleep(5)
-			a(2)
-			assert.strictEqual(order, "a = 0 onCleanup a = 1 onCleanup a = 2 ")
-			await sleep(30)
-			assert.strictEqual(order, "a = 0 onCleanup a = 1 onCleanup a = 2 done(2) ")
+					onCleanup(() => {
+						log.push("onCleanup")
+					})
+
+					log.push("end sync")
+					await $s(sleep(5))
+					log.push("NOT RUN")
+				})
+				log.push("after effect")
+			})
 			await sleep(20)
-			assert.strictEqual(order, "a = 0 onCleanup a = 1 onCleanup a = 2 done(2) ")
+			assert.strictEqual(log.join("; "), "init; after destroy; end sync; onCleanup; after effect")
 		})
 
 		it("handles forced destruction of parent within child", async () => {
@@ -1475,21 +1546,22 @@ describe("@dynein/state", () => {
 						owner.destroy()
 						order += "}outer destroy "
 					})
+
+					onCleanup(() => {
+						order += "cleanup after "
+					})
+
+					order += "sleep "
+
 					await $s(sleep(5))
 
-					createEffect(() => {
-						onCleanup(() => {
-							order += "cleanup inner 2 "
-						})
-						order += "run inner 2 "
-					})
-					order += "outer done "
+					order += "NOT RUN "
 				})
 			})
 
 			assert.strictEqual(order, "run outer ")
 			await sleep(30)
-			assert.strictEqual(order, "run outer run inner 1 outer destroy{cleanup outer cleanup inner 1 }outer destroy run inner 2 outer done cleanup inner 2 ")
+			assert.strictEqual(order, "run outer run inner 1 outer destroy{cleanup outer cleanup inner 1 }outer destroy sleep cleanup after ")
 		})
 	})
 
