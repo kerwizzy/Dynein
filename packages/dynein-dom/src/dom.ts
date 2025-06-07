@@ -192,7 +192,7 @@ function createAndInsertElement<
 					setAttrOrProp(el, attributeName, rawVal)
 				})
 			} else {
-				setAttrOrProp(el, attributeName, (val as any) ?? "") //TODO: Would be nice if this wasn't necessary
+				setAttrOrProp(el, attributeName, val)
 			}
 		}
 	}
