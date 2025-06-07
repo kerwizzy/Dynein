@@ -1039,8 +1039,11 @@ function getRestoreAllStateFunction() {
 function restoreBaseState() {
 	///*DEBUG*/console.log("restore base state")
 
-	// Really restore *everything*, because this is returning control to the main event
-	// loop, and leaving a Dynein-wrapped code block.
+
+	// Really restore *everything*, because this is called below in stateStashPromise to return
+	// control to the main event loop after leaving a Dynein-wrapped code block.
+	//
+	// This is also called above in createRoot to run code as if it was run outside any other functions.
 	assertedStatic = false
 	collectingDependencies = false
 	currentOwner = undefined
