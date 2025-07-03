@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, createMuffled, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray, addCustomStateStasher } from "../built/state.js"
+import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, createMuffled, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray, addCustomStateStasher, WatchedArray, WatchedSet, WatchedMap } from "../built/state.js"
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -4171,6 +4171,170 @@ describe("@dynein/state", () => {
 			log += useContext(ctx)
 
 			assert.strictEqual(log, "aabbcbbaa")
+		})
+	})
+
+	describe("Watched builtins", () => {
+		describe("WatchedArray", () => {
+			it("batches updates in onEdit", () => {
+				createRoot(() => {
+					const log = []
+					const sig = createSignal(0)
+
+					createEffect(() => {
+						log.push(`sig = ${sig()}`)
+					})
+
+					const arr = new WatchedArray([0])
+					arr.onSplice(() => {
+						log.push("onSplice start")
+						sig(sig() + 1)
+						sig(sig() + 1)
+						sig(sig() + 1)
+						log.push("onSplice end")
+					})
+
+					log.push("push")
+					arr.push(1)
+					log.push("after push")
+
+					assert.strictEqual(log.join("; "), "sig = 0; push; onSplice start; onSplice end; sig = 3; after push")
+				})
+			})
+
+			it("batches updates in onReplace", () => {
+				createRoot(() => {
+					const log = []
+					const sig = createSignal(0)
+
+					createEffect(() => {
+						log.push(`sig = ${sig()}`)
+					})
+
+					const arr = new WatchedArray([0])
+					arr.onReplace(() => {
+						log.push("onReplace start")
+						sig(sig() + 1)
+						sig(sig() + 1)
+						sig(sig() + 1)
+						log.push("onReplace end")
+					})
+
+					log.push("replace")
+					arr.value([1])
+					log.push("after replace")
+
+					assert.strictEqual(log.join("; "), "sig = 0; replace; onReplace start; onReplace end; sig = 3; after replace")
+				})
+			})
+		})
+
+		describe("WatchedSet", () => {
+			it("batches updates in onEdit", () => {
+				createRoot(() => {
+					const log = []
+					const sig = createSignal(0)
+
+					createEffect(() => {
+						log.push(`sig = ${sig()}`)
+					})
+
+					const arr = new WatchedSet([0])
+					arr.onEdit(() => {
+						log.push("onEdit start")
+						sig(sig() + 1)
+						sig(sig() + 1)
+						sig(sig() + 1)
+						log.push("onEdit end")
+					})
+
+					log.push("add")
+					arr.add(1)
+					log.push("after add")
+
+					assert.strictEqual(log.join("; "), "sig = 0; add; onEdit start; onEdit end; sig = 3; after add")
+				})
+			})
+
+			it("batches updates in onReplace", () => {
+				createRoot(() => {
+					const log = []
+					const sig = createSignal(0)
+
+					createEffect(() => {
+						log.push(`sig = ${sig()}`)
+					})
+
+					const arr = new WatchedSet([0])
+					arr.onReplace(() => {
+						log.push("onReplace start")
+						sig(sig() + 1)
+						sig(sig() + 1)
+						sig(sig() + 1)
+						log.push("onReplace end")
+					})
+
+					log.push("replace")
+					arr.value(new Set([1]))
+					log.push("after replace")
+
+					assert.strictEqual(log.join("; "), "sig = 0; replace; onReplace start; onReplace end; sig = 3; after replace")
+				})
+			})
+		})
+
+		describe("WatchedMap", () => {
+			it("batches updates in onEdit", () => {
+				createRoot(() => {
+					const log = []
+					const sig = createSignal(0)
+
+					createEffect(() => {
+						log.push(`sig = ${sig()}`)
+					})
+
+					const arr = new WatchedMap([["x", 0]])
+					arr.onEdit(() => {
+						log.push("onEdit start")
+						sig(sig() + 1)
+						sig(sig() + 1)
+						sig(sig() + 1)
+						log.push("onEdit end")
+					})
+
+					log.push("set")
+					arr.set("x", 1)
+					log.push("after set")
+
+					assert.strictEqual(log.join("; "), "sig = 0; set; onEdit start; onEdit end; sig = 3; after set")
+				})
+			})
+
+			it("batches updates in onReplace", () => {
+				createRoot(() => {
+					const log = []
+					const sig = createSignal(0)
+
+					createEffect(() => {
+						log.push(`sig = ${sig()}`)
+					})
+
+					const arr = new WatchedMap([["x", 0]])
+					arr.onReplace(() => {
+						log.push("onReplace start")
+						sig(sig() + 1)
+						sig(sig() + 1)
+						sig(sig() + 1)
+						log.push("onReplace end")
+					})
+
+					log.push("replace")
+					arr.value(new Map([["y", 1]]))
+					log.push("after replace")
+
+					assert.strictEqual(log.join("; "), "sig = 0; replace; onReplace start; onReplace end; sig = 3; after replace")
+				})
+			})
 		})
 	})
 

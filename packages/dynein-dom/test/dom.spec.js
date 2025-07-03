@@ -27,6 +27,38 @@ function sleep(ms = 10) {
 	})
 }
 
+// Used for the addFor fuzzing code. Small list to make collisions and duplicates more likely.
+const possibleEntries = "abcxyz"
+function rand() {
+	return possibleEntries[Math.floor(Math.random() * possibleEntries.length)]
+}
+
+function srand() {
+	const options = [
+		``,
+		`${rand()}|${rand()} `,
+		`${rand()}|${rand()}|${rand()} `,
+		`${rand()} `,
+		`${rand()} `,
+		`${rand()} `
+	]
+
+	return options[Math.floor(Math.random() * options.length)]
+}
+
+/* Randomize array in-place using Durstenfeld shuffle algorithm */
+// https://stackoverflow.com/a/12646864
+function shuffleArray(array) {
+	array = array.slice(0)
+	for (var i = array.length - 1; i > 0; i--) {
+		var j = Math.floor(Math.random() * (i + 1))
+		var temp = array[i]
+		array[i] = array[j]
+		array[j] = temp
+	}
+	return array
+}
+
 describe("@dynein/dom", () => {
 	if (typeof process !== "undefined") {
 		global.requestAnimationFrame = (fn) => {
@@ -1083,7 +1115,7 @@ describe("@dynein/dom", () => {
 					twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2")
 				})
 				await sleep()
-				assert.strictEqual(twoNode1, twoNode2)
+				assert.strictEqual(twoNode1 === twoNode2, true)
 			})
 
 			it("does not reuse nodes when the entire array is replaced", async () => {
@@ -1100,7 +1132,7 @@ describe("@dynein/dom", () => {
 					twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2")
 				})
 				await sleep()
-				assert.strictEqual(twoNode1 === twoNode2, false, "twoNode1 === twoNode2")
+				assert.strictEqual(twoNode1, twoNode2, "twoNode1 === twoNode2")
 			})
 
 			it("handles multiple splices inside a batch", async () => {
@@ -1326,139 +1358,302 @@ describe("@dynein/dom", () => {
 				assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), "nothing")
 			})
 
+			/* // Uncomment for testing a particular test failure found by the fuzzer
+			it("extracted rand", () => {
+				const addAsyncMode = true
+				const renderIndexes = false
+
+				let pairList = []
+				const arr = new WatchedArray(pairList.slice(0))
+				const document = mount(() => {
+					addFor(arr, async (item, index) => {
+						if (!item) {
+							// don't add anything for empty string
+						} else {
+							if (addAsyncMode) {
+								addAsync(async () => {
+									if (Math.random() < 0.5) {
+										for (const c of item.split("|")) {
+											await $s(sleep(Math.random() * 10))
+											if (renderIndexes) {
+												addText(() => index() + c)
+											} else {
+												addText(c)
+											}
+										}
+									} else {
+										for (const c of item.split("|")) {
+											if (renderIndexes) {
+												addText(() => index() + c)
+											} else {
+												addText(c)
+											}
+											await $s(sleep(Math.random() * 10))
+										}
+									}
+								})
+							} else {
+								for (const c of item.split("|")) {
+									if (renderIndexes) {
+										addText(() => index() + c)
+									} else {
+										addText(c)
+									}
+								}
+							}
+						}
+					}, renderIndexes)
+				})
+
+				console.log("PAIR LIST = ", pairList)
+
+				const forOut = document.body.innerHTML.replace(/<\!--.*?-->/g, "")
+
+				let expectedOut = ""
+				for (let index = 0; index < pairList.length; index++) {
+					const item = pairList[index]
+					if (!item) {
+						// don't add anything for empty string
+					} else {
+						for (const c of item.split("|")) {
+							if (renderIndexes) {
+								expectedOut += (index + c)
+							} else {
+								expectedOut += c
+							}
+						}
+					}
+				}
+
+				assert.strictEqual(forOut, expectedOut)
+			})
+			*/
+
+
 			// fuzz for edge cases
 			describe("passes randomly generated tests", () => {
 				for (let i = 0; i < 1000; i++) {
 					it("rand " + i, async () => {
 						const actionsLog = []
-
-						const addAsyncMode = Math.random() < 0.05
-						if (addAsyncMode) {
-							actionsLog.push("async")
-						}
-
 						let pairList = []
-						for (let addToInit = 0; addToInit < Math.random() * 5; addToInit++) {
-							if (Math.random() < 0.2) {
-								pairList.push("")
-								actionsLog.push(`push ""`)
-							} else {
-								const v = Math.random().toString(16).substring(2, 4) + " "
-								pairList.push(v)
-								actionsLog.push("push " + JSON.stringify(v))
+						let document
+						let initialPairList
+
+						const renderIndexes = Math.random() < 0.2
+						try {
+							const addAsyncMode = Math.random() < 0.05
+
+							if (addAsyncMode) {
+								actionsLog.push("async")
 							}
-						}
 
-						actionsLog.push("init")
+							if (renderIndexes) {
+								actionsLog.push("indexes")
+							}
 
-						let list = new WatchedArray(Array.from(pairList))
-
-						const document = mount(() => {
-							addFor(list, async (item) => {
-								if (!item) {
-									// don't add anything for empty string
+							for (let addToInit = 0; addToInit < Math.random() * 5; addToInit++) {
+								if (Math.random() < 0.2) {
+									pairList.push("")
+									actionsLog.push(`push ""`)
 								} else {
-									if (addAsyncMode) {
-										addAsync(async () => {
-											if (Math.random() < 0.5) {
-												addText(item)
-												await $s(sleep(Math.random() * 50))
-											} else {
-												await $s(sleep(Math.random() * 50))
-												addText(item)
+									const v = srand()
+									pairList.push(v)
+									actionsLog.push("push " + JSON.stringify(v))
+								}
+							}
+
+							actionsLog.push("init")
+
+							initialPairList = Array.from(pairList)
+							let list = new WatchedArray(Array.from(pairList))
+
+							document = mount(() => {
+								addFor(list, async (item, index) => {
+									if (!item) {
+										// don't add anything for empty string
+									} else {
+										if (addAsyncMode) {
+											addAsync(async () => {
+												if (Math.random() < 0.5) {
+													for (const c of item.split("|")) {
+														await $s(sleep(1))
+														if (renderIndexes) {
+															addText(() => index() + c)
+														} else {
+															addText(c)
+														}
+													}
+												} else {
+													for (const c of item.split("|")) {
+														if (renderIndexes) {
+															addText(() => index() + c)
+														} else {
+															addText(c)
+														}
+														await $s(sleep(1))
+													}
+												}
+											})
+										} else {
+											for (const c of item.split("|")) {
+												if (renderIndexes) {
+													addText(() => index() + c)
+												} else {
+													addText(c)
+												}
 											}
-										})
-									} else {
-										addText(item)
+										}
 									}
-								}
+								}, renderIndexes)
 							})
-						})
 
-						for (let j = 0; j < Math.random() * 15; j++) {
-							if (addAsyncMode && Math.random() < 0.05) {
-								actionsLog.push("sleep")
-								await $s(sleep(Math.random() * 5))
-							} else if (Math.random() < 0.1) {
-								if (Math.random() < 0.5) {
-									actionsLog.push("clear")
-									pairList = []
-									list.value([])
-								} else {
-									const replaceOptions = [
-										["x "],
-										["x ", "y ", "z "],
-										["", "x ", "", "y "],
-										["", "", "", "", ""],
-										["", "x ", "", "y ", ""]
-									]
-									const newList = replaceOptions[Math.floor(Math.random() * replaceOptions.length)]
-									actionsLog.push("replace " + JSON.stringify(newList))
-									pairList = newList
-									list.value(Array.from(newList))
-								}
-							} else {
-								let startI = Math.floor((Math.random() * 2 - 1) * 1.5 * list.length)
-								let remove = Math.floor((Math.random() * 2 - 1) * 1.5 * list.length)
-
-								let toAdd = []
-								for (let n = 0; n < Math.random() * 10; n++) {
+							const nOps = Math.random() * 12
+							for (let j = 0; j < nOps; j++) {
+								if (addAsyncMode && Math.random() < 0.05) {
+									actionsLog.push("sleep")
+									await $s(sleep(Math.random() * 5))
+								} else if (Math.random() < 0.3) {
 									if (Math.random() < 0.2) {
-										toAdd.push("")
+										actionsLog.push("clear")
+										pairList = []
+										list.value([])
 									} else {
-										const v = Math.random().toString(16).substring(2, 4) + " "
-										toAdd.push(v)
-									}
-								}
+										const replaceOptions = [
+											[""],
+											["", "", "", "", ""],
+											[srand()],
+											["", srand(), "", srand()],
+											["", srand(), "", srand(), ""],
+											Array(pairList.length).fill(0).map(() => srand()),
+											shuffleArray(pairList)
+										]
+										const newList = replaceOptions[Math.floor(Math.random() * replaceOptions.length)]
+										actionsLog.push("replace " + JSON.stringify(newList))
 
-								if (Math.random() < 0.05) {
-									if (Math.random() < 0.5) {
-										startI = Infinity
-									} else {
-										startI = undefined
-									}
-								}
-								if (Math.random() < 0.05) {
-									if (Math.random() < 0.5) {
-										remove = Infinity
-									} else {
-										remove = undefined
-									}
-								}
+										let canTestReordering = true
+										for (let i = 0; i < pairList.length; i++) {
+											const item = pairList[i]
+											if (!newList.includes(item)) {
+												canTestReordering = false
+												break
+											}
+										}
 
-								if (Math.random() < 0.05) {
-									// Pass odd argument lengths
-									const r = Math.random()
-									if (r < 0.3) {
-										list.splice()
-										pairList.splice()
-										actionsLog.push(`splice ()`)
-									} else if (r < 0.6) {
-										list.splice(startI)
-										pairList.splice(startI)
-										actionsLog.push(`splice (${startI})`)
-									} else {
-										list.splice(startI, remove)
-										pairList.splice(startI, remove)
-										actionsLog.push(`splice (${startI} ${remove})`)
+										let oldNodes = Array.from(document.body.childNodes)
+
+										pairList = newList
+										list.value(Array.from(newList))
+
+										if (canTestReordering) {
+											if (addAsyncMode) {
+												await sleep(50)
+											}
+
+											const foundSomePreservation = new Map()
+											for (const oldNode of oldNodes) {
+												const key = oldNode.textContent.replace(/\d/g, "") // remove index markers
+												foundSomePreservation.set(key, false)
+											}
+
+											const newNodes = Array.from(document.body.childNodes)
+											for (const newNode of newNodes) {
+												const key = newNode.textContent.replace(/\d/g, "") // remove index markers
+												if (foundSomePreservation.has(key)) {
+													foundSomePreservation.set(key, true)
+												}
+											}
+
+											for (const [key, preservation] of foundSomePreservation) {
+												if (!preservation) {
+													actionsLog.push(`NOT PRESERVED ${key}`)
+												}
+											}
+										}
 									}
 								} else {
-									list.splice(startI, remove, ...toAdd)
-									pairList.splice(startI, remove, ...toAdd)
-									actionsLog.push(`splice ${startI} ${remove} ${JSON.stringify(toAdd)}`)
+									let startI = Math.floor((Math.random() * 2 - 1) * 1.5 * list.length)
+									let remove = Math.floor((Math.random() * 2 - 1) * 1.5 * list.length)
+
+									let toAdd = []
+									for (let n = 0; n < Math.random() * 4; n++) {
+										if (Math.random() < 0.2) {
+											toAdd.push("")
+										} else {
+											const v = srand()
+											toAdd.push(v)
+										}
+									}
+
+									if (Math.random() < 0.05) {
+										if (Math.random() < 0.5) {
+											startI = Infinity
+										} else {
+											startI = undefined
+										}
+									}
+									if (Math.random() < 0.05) {
+										if (Math.random() < 0.5) {
+											remove = Infinity
+										} else {
+											remove = undefined
+										}
+									}
+
+									if (Math.random() < 0.05) {
+										// Pass odd argument lengths
+										const r = Math.random()
+										if (r < 0.3) {
+											actionsLog.push(`splice ()`)
+											pairList.splice()
+											list.splice()
+										} else if (r < 0.6) {
+											actionsLog.push(`splice (${startI})`)
+											pairList.splice(startI)
+											list.splice(startI)
+										} else {
+											actionsLog.push(`splice (${startI} ${remove})`)
+											pairList.splice(startI, remove)
+											list.splice(startI, remove)
+										}
+									} else {
+										actionsLog.push(`splice ${startI} ${remove} ${JSON.stringify(toAdd)}`)
+										pairList.splice(startI, remove, ...toAdd)
+										list.splice(startI, remove, ...toAdd)
+									}
 								}
 							}
-						}
 
-						if (addAsyncMode) {
-							await sleep(100)
-						} else {
-							await sleep(1)
+							if (addAsyncMode) {
+								await sleep(50)
+							}
+						} catch (err) {
+							const forOut = document.body.innerHTML.replace(/<\!--.*?-->/g, "")
+							const expectedOut = Array.from(pairList).join("")
+							console.log(`rand ${i} state at throw:`, { forOut, expectedOut, actionsLog })
+							throw err
 						}
 
 						const forOut = document.body.innerHTML.replace(/<\!--.*?-->/g, "")
-						const expectedOut = Array.from(pairList).join("")
+
+						let expectedOut = ""
+						for (let index = 0; index < pairList.length; index++) {
+							const item = pairList[index]
+							if (!item) {
+								// don't add anything for empty string
+							} else {
+								for (const c of item.split("|")) {
+									if (renderIndexes) {
+										expectedOut += (index + c)
+									} else {
+										expectedOut += c
+									}
+								}
+							}
+						}
+
+						//console.log(expectedOut, actionsLog.join("; "))
 						assert.strictEqual(forOut, expectedOut, actionsLog.join("; "))
+						assert.strictEqual(actionsLog.join("; ").includes("NOT"), false, actionsLog.join("; "))
 					})
 				}
 			})
@@ -1562,10 +1757,10 @@ describe("@dynein/dom", () => {
 					twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2")
 				})
 				await sleep()
-				assert.strictEqual(twoNode1, twoNode2)
+				assert.strictEqual(twoNode1 === twoNode2, true)
 			})
 
-			it("does not reuse nodes when the entire set is replaced", async () => {
+			it("reuses nodes even when the entire set is replaced", async () => {
 				const list = new WatchedSet([1, 2, 3, 4])
 				let twoNode1
 				let twoNode2
@@ -1575,11 +1770,11 @@ describe("@dynein/dom", () => {
 					})
 					const nodes = Array.from(document.body.childNodes)
 					twoNode1 = nodes.find(n => n.textContent === "2")
-					list.value(new Set([1, 2, 3, 4]))
+					list.value(new Set([3, 4, 2, 1]))
 					twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2")
 				})
 				await sleep()
-				assert.strictEqual(twoNode1 === twoNode2, false, "twoNode1 === twoNode2")
+				assert.strictEqual(twoNode1 === twoNode2, true, "twoNode1 === twoNode2")
 			})
 
 			it("handles multiple changes inside a batch", async () => {
@@ -1735,7 +1930,7 @@ describe("@dynein/dom", () => {
 						let pairList = new Set()
 						const actionsLog = []
 						for (let addToInit = 0; addToInit < Math.random() * 5; addToInit++) {
-							const v = Math.random().toString(16).substring(2, 4)
+							const v = rand()
 							pairList.add(v)
 							actionsLog.push("add " + v)
 						}
@@ -1753,35 +1948,67 @@ describe("@dynein/dom", () => {
 						for (let j = 0; j < Math.random() * 15; j++) {
 							const n = Math.floor(Math.random() * 3)
 							if (n === 0) {
-								if (Math.random < 0.5) {
+								if (Math.random < 0.6) {
 									list.clear()
 									pairList.clear()
 									actionsLog.push("clear")
-								} else {
+								} else if (Math.random() < 0.6) {
 									pairList = new Set()
 									list.value(new Set())
 									actionsLog.push("reset")
+								} else {
+									const replaceOptions = [
+										[""],
+										["", "", "", "", ""],
+										["", rand()],
+										[rand(), ""],
+										["", rand(), ""],
+										[rand(), rand(), rand(), rand(), rand()],
+									]
+									const newList = new Set(replaceOptions[Math.floor(Math.random() * replaceOptions.length)])
+									actionsLog.push("replace " + JSON.stringify(Array.from(newList)))
+
+									let canTestReordering = true
+									for (const item of pairList) {
+										if (!newList.has(item)) {
+											canTestReordering = false
+										}
+									}
+
+									let oldNodes = Array.from(document.body.childNodes)
+
+									pairList = newList
+									list.value(newList)
+
+									if (canTestReordering) {
+										const newNodes = Array.from(document.body.childNodes)
+										for (const oldNode of oldNodes) {
+											if (!newNodes.includes(oldNode)) {
+												actionsLog.push("NOT PRESERVED " + oldNode.textContent)
+											}
+										}
+									}
 								}
 							} else if (n === 2) {
 								if (Math.random() < 0.5) {
-									const v = Array.from(pairList)[Math.floor(pairList.size * Math.random())] ?? "x"
+									const v = Array.from(pairList)[Math.floor(pairList.size * Math.random())] ?? rand()
 									list.delete(v)
 									pairList.delete(v)
 									actionsLog.push("delete " + v)
 								} else {
-									const v = Math.random().toString(16).substring(2, 4)
+									const v = rand()
 									list.delete(v)
 									pairList.delete(v)
 									actionsLog.push("delete " + v)
 								}
 							} else {
 								if (Math.random() < 0.5) {
-									const v = Array.from(pairList)[Math.floor(pairList.size * Math.random())] ?? "x"
+									const v = Array.from(pairList)[Math.floor(pairList.size * Math.random())] ?? rand()
 									list.add(v)
 									pairList.add(v)
 									actionsLog.push("add " + v)
 								} else {
-									const v = Math.random().toString(16).substring(2, 4)
+									const v = rand()
 									list.add(v)
 									pairList.add(v)
 									actionsLog.push("add " + v)
@@ -1794,6 +2021,7 @@ describe("@dynein/dom", () => {
 						const expectedOut = Array.from(pairList).join("")
 
 						assert.strictEqual(forOut, expectedOut, actionsLog.join(", "))
+						assert.strictEqual(actionsLog.join("; ").includes("NOT"), false, actionsLog.join("; "))
 					})
 				}
 			})
@@ -1907,10 +2135,10 @@ describe("@dynein/dom", () => {
 					twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2=b;")
 				})
 				await sleep()
-				assert.strictEqual(twoNode1, twoNode2)
+				assert.strictEqual(twoNode1 === twoNode2, true)
 			})
 
-			it("does not reuse nodes when the entire set is replaced", async () => {
+			it("reuses nodes even when the entire map is replaced", async () => {
 				const list = new WatchedMap([[1, "a"], [2, "b"], [3, "c"]])
 				let twoNode1
 				let twoNode2
@@ -1919,14 +2147,15 @@ describe("@dynein/dom", () => {
 						addText(k + "=" + v + ";")
 					})
 					twoNode1 = Array.from(document.body.childNodes).find(n => n.textContent === "2=b;")
-					list.value(new Map([[1, "a"], [2, "b"], [3, "c"]]))
+					list.value(new Map([[2, "b"], [1, "a"], [3, "c"]]))
 					twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2=b;")
+
 				})
-				await sleep()
-				assert.strictEqual(twoNode1 === twoNode2, false, "twoNode1 === twoNode2")
+
+				assert.strictEqual(twoNode1 === twoNode2, true, "twoNode1 === twoNode2")
 			})
 
-			it("does not reuse nodes when an element value is set", async () => {
+			it("reuses nodes when an element value is set but not modified", async () => {
 				const list = new WatchedMap([[1, "a"], [2, "b"], [3, "c"]])
 				let twoNode1
 				let twoNode2
@@ -1941,7 +2170,7 @@ describe("@dynein/dom", () => {
 				await sleep()
 				twoNode2 = Array.from(document.body.childNodes).find(n => n.textContent === "2=b;")
 				await sleep()
-				assert.strictEqual(twoNode1 === twoNode2, false, "twoNode1 === twoNode2")
+				assert.strictEqual(twoNode1 === twoNode2, true, "twoNode1 === twoNode2")
 			})
 
 			it("handles multiple changes inside a batch", async () => {
@@ -1972,7 +2201,7 @@ describe("@dynein/dom", () => {
 					batch(() => {
 						list.delete(1)
 						list.delete(10)
-						list.value(new WatchedMap([[8, "x"]]))
+						list.value(new Map([[8, "x"]]))
 						list.set(2, "d")
 						list.set(3, "x")
 						list.delete(2)
@@ -2093,8 +2322,8 @@ describe("@dynein/dom", () => {
 						let pairList = new Map()
 						const actionsLog = []
 						for (let addToInit = 0; addToInit < Math.random() * 5; addToInit++) {
-							const k = Math.random().toString(16).substring(2, 4)
-							const v = Math.random().toString(16).substring(2, 4)
+							const k = rand()
+							const v = rand()
 							pairList.set(k, v)
 							actionsLog.push(`set ${k}=${v}`)
 						}
@@ -2128,7 +2357,7 @@ describe("@dynein/dom", () => {
 									pairList.delete(k)
 									actionsLog.push("delete " + k)
 								} else {
-									const k = Math.random().toString(16).substring(2, 4)
+									const k = rand()
 									list.delete(k)
 									pairList.delete(k)
 									actionsLog.push("delete " + k)
@@ -2142,14 +2371,14 @@ describe("@dynein/dom", () => {
 										pairList.set(k, v)
 										actionsLog.push(`set ${k}=${v}`)
 									} else {
-										const v = Math.random().toString(16).substring(2, 4)
+										const v = rand()
 										list.set(k, v)
 										pairList.set(k, v)
 										actionsLog.push(`set ${k}=${v}`)
 									}
 								} else {
-									const k = Math.random().toString(16).substring(2, 4)
-									const v = Math.random().toString(16).substring(2, 4)
+									const k = rand()
+									const v = rand()
 									list.set(k, v)
 									pairList.set(k, v)
 									actionsLog.push(`set ${k}=${v}`)

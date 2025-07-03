@@ -1,5 +1,5 @@
 import WatchedArray from "./WatchedArray.js"
-import { Signal, createSignal, sample, batch, onUpdate, createEffect, Owner, runWithOwner, getOwner, assertStatic, untrack, onWrite } from "./state.js"
+import { createSignal, sample, batch, createEffect, Owner, runWithOwner, getOwner, assertStatic, untrack } from "./state.js"
 
 type ReactiveArrayItem<T> = {
 	value: T,
@@ -28,10 +28,10 @@ function binarySearch(min: number, max: number, pred: (val: number) => boolean) 
 export class MappableReactiveArray<T> {
 	readonly array: WatchedArray<ReactiveArrayItem<T>>
 
-	protected readonly rawArray: ReactiveArrayItem<T>[]
+	protected readonly rawArray: readonly ReactiveArrayItem<T>[]
 
 	constructor(items: T[]) {
-		this.array = new WatchedArray(items.map((value, i) => ({ value, index: createSignal(i) })))
+		this.array = new WatchedArray(items.map((value, i): ReactiveArrayItem<T> => ({ value, index: createSignal(i) })))
 
 		this.rawArray = sample(this.array.value)
 	}
@@ -164,7 +164,7 @@ export class MappableReactiveArray<T> {
 		const sortedArr = sample(sorted.array.value)
 
 		assertStatic(() => {
-			sortedArr.sort((aItem, bItem) => cmp(aItem.value, bItem.value))
+			(sortedArr as ReactiveArrayItem<T>[]).sort((aItem, bItem) => cmp(aItem.value, bItem.value))
 		})
 
 		for (let i = 0; i < sortedArr.length; i++) {
@@ -223,7 +223,7 @@ export class MappableReactiveArray<T> {
 	}
 
 	static fromWatchedArray<T>(arr: WatchedArray<T>): MappableReactiveArray<T> {
-		const out = new ReactiveArray(sample(arr.value))
+		const out = new ReactiveArray(sample(arr.value).slice(0))
 
 		arr.onSplice((startIndex, added, removed) => {
 			if (startIndex === undefined) {

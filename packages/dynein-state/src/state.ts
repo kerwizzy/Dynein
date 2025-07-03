@@ -156,6 +156,41 @@ export function getOwner(): Owner | null | undefined {
 	return currentOwner
 }
 
+export function _runAtBaseWithState<T>(
+	new_assertedStatic: boolean,
+	new_collectingDependencies: boolean,
+	new_currentOwner: Owner | null | undefined,
+	new_currentEffect: Effect | undefined,
+	inner: () => T): T {
+	/** STATE CHANGES
+	 * assertedStatic 	       (from arguments)
+	 * collectingDependencies  (from arguments)
+	 * currentOwner            (from arguments)
+	 * currentEffect           (from arguments)
+	 * contextValues           reset to base
+	 * currentUpdateQueue	   (preserve)
+	 * startDelayed            (preserve)
+	 * custom states           reset to base
+	 */
+
+	const saved_currentUpdateQueue = currentUpdateQueue
+	const saved_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
+	const restore = getRestoreAllStateFunction()
+	try {
+		restoreBaseState(false)
+		assertedStatic = new_assertedStatic
+		collectingDependencies = new_collectingDependencies
+		currentOwner = new_currentOwner
+		currentEffect = new_currentEffect
+
+		currentUpdateQueue = saved_currentUpdateQueue
+		currentUpdateQueue.startDelayed = saved_currentUpdateQueue_startDelayed
+		return inner()
+	} finally {
+		restore()
+	}
+}
+
 export function createRoot<T>(inner: (dispose: () => void) => T): T {
 	/** STATE CHANGES
 	 * assertedStatic 	       false (reset)
@@ -168,18 +203,8 @@ export function createRoot<T>(inner: (dispose: () => void) => T): T {
 	 * custom states           reset to base
 	 */
 
-	const saved_currentUpdateQueue = currentUpdateQueue
-	const saved_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
-	const restore = getRestoreAllStateFunction()
-	try {
-		restoreBaseState(false)
-		currentUpdateQueue = saved_currentUpdateQueue
-		currentUpdateQueue.startDelayed = saved_currentUpdateQueue_startDelayed
-		const owner = new Owner(null)
-		return runWithOwner(owner, () => inner(() => owner.destroy()))
-	} finally {
-		restore()
-	}
+	const owner = new Owner(null)
+	return _runAtBaseWithState(false, false, owner, undefined, () => inner(() => owner.destroy()))
 }
 
 export type Context<T> = {

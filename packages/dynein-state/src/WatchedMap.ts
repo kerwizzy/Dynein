@@ -1,31 +1,82 @@
-import { Signal, sample, isSignal, createSignal, toSignal } from "./state.js"
-import WatchedValue from "./WatchedValue.js"
+import { Signal, sample, createSignal, toSignal, onCleanup, _runAtBaseWithState, batch } from "./state.js"
 
+export default class WatchedMap<K, V> {
+	readonly value: Signal<ReadonlyMap<K, V>>
 
-export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
-	readonly value: Signal<Map<K, V>>
-	readonly editEvent: Signal<[key: K, value: V | undefined, add: boolean] | null> // event for *any* call. Not necessarily one that actually changes the map.
+	private hiddenValue: Map<K, V>
+	private readonly hiddenSignal: Signal<Map<K, V>>
+	private readonly editListeners: ((key: K, value: V | undefined, setting: boolean) => void)[] = []
+	private readonly replaceListeners: ((oldMap: ReadonlyMap<K, V>, newMap: ReadonlyMap<K, V> | null) => void)[] = []
 
-	constructor(iterable?: Iterable<readonly [K, V]> | null | undefined | Signal<Map<K, V>>) {
-		super()
+	constructor(iterable?: Iterable<readonly [K, V]> | undefined) {
+		this.hiddenValue = iterable ? new Map(iterable) : new Map()
+		this.hiddenSignal = createSignal(this.hiddenValue, true)
 
-		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? new Map<K, V>(iterable as any) : new Map(), true)
-
-		this.editEvent = createSignal(null, true)
-
-		this.value = toSignal(() => baseSignal(), (value: Map<K, V>) => {
-			if (value !== sample(baseSignal)) {
-				// used in @dynein/dom addFor to detect an overwrite of the entire map. addFor can't just
-				// listen on set.value() because that gets fired for every .set and .delete
-
-				// Update this before firing spliceEvent because the handlers in addFor will need
-				// to read the updated set value
-				baseSignal(value)
-
-				this.editEvent(null)
-			} else {
-				baseSignal(value)
+		this.value = toSignal(this.hiddenSignal, (newValue: Map<K, V>) => {
+			if (newValue === this.hiddenValue) {
+				//@ts-ignore
+				console.warn("Assigning the same Map to WatchedMap.value has no effect.")
+				return
 			}
+
+			// This avoids confusing behavior caused by passing a WatchedMap to .value
+			if (!(newValue instanceof Map)) {
+				//@ts-ignore
+				console.warn("Converting new value to native Map.")
+				newValue = sample(() => new Map(newValue))
+			}
+
+			this.runReplaceListeners(newValue)
+
+			this.hiddenValue = newValue
+			this.hiddenSignal(newValue)
+		})
+	}
+
+	private runEditListeners(key: K, value: V | undefined, setting: boolean) {
+		_runAtBaseWithState(false, false, undefined, undefined, () => {
+			batch(() => {
+				for (let i = 0; i < this.editListeners.length; i++) {
+					this.editListeners[i](key, value, setting)
+				}
+			})
+		})
+	}
+
+	private runReplaceListeners(newValue: ReadonlyMap<K, V> | null) {
+		_runAtBaseWithState(false, false, undefined, undefined, () => {
+			batch(() => {
+				for (let i = 0; i < this.replaceListeners.length; i++) {
+					this.replaceListeners[i](this.hiddenValue, newValue)
+				}
+			})
+		})
+	}
+
+	onEdit(listener: ((key: K, value: V | undefined, setting: boolean) => void)) {
+		this.editListeners.push(listener)
+		onCleanup(() => {
+			const idx = this.editListeners.indexOf(listener)
+			if (idx === -1) {
+				//@ts-ignore
+				console.warn("Unexpected state: unable to remove onEdit listener")
+			}
+
+			this.editListeners.splice(idx, 1)
+		})
+	}
+
+	onReplace(listener: ((oldMap: ReadonlyMap<K, V>, newMap: ReadonlyMap<K, V> | null) => void)) {
+		this.replaceListeners.push(listener)
+
+		onCleanup(() => {
+			const idx = this.replaceListeners.indexOf(listener)
+			if (idx === -1) {
+				//@ts-ignore
+				console.warn("Unexpected state: unable to remove onReplace listener")
+			}
+
+			this.replaceListeners.splice(idx, 1)
 		})
 	}
 
@@ -34,9 +85,12 @@ export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
 	}
 
 	set(key: K, value: V) {
-		const out = this.v.set(key, value)
-		this.editEvent([key, value, true])
-		this.fire()
+		const out = this.hiddenValue.set(key, value)
+
+		this.runEditListeners(key, value, true)
+
+		this.hiddenSignal(this.hiddenValue) // fire
+
 		return out
 	}
 
@@ -45,17 +99,25 @@ export default class WatchedMap<K, V> extends WatchedValue<Map<K, V>> {
 	}
 
 	delete(key: K) {
-		const out = this.v.delete(key)
-		this.editEvent([key, undefined, false])
-		this.fire()
-		return out
+		const wasChanged = this.hiddenValue.delete(key)
+
+		if (wasChanged) {
+			this.runEditListeners(key, undefined, false)
+
+			this.hiddenSignal(this.hiddenValue)
+		}
+
+		return wasChanged
 	}
 
 	clear() {
-		const out = this.v.clear()
-		this.editEvent(null)
-		this.fire()
-		return out
+		if (this.hiddenValue.size > 0) {
+			this.runReplaceListeners(null)
+
+			this.hiddenValue.clear()
+
+			this.hiddenSignal(this.hiddenValue)
+		}
 	}
 
 	entries() {

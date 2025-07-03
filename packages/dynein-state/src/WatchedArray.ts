@@ -1,34 +1,72 @@
-import { createSignal, Signal, sample, isSignal, toSignal, subclock, onWrite } from "./state.js"
-import WatchedValue from "./WatchedValue.js"
+import { createSignal, Signal, sample, toSignal, onCleanup, _runAtBaseWithState, batch } from "./state.js"
 
-export default class WatchedArray<T> extends WatchedValue<T[]> {
-	readonly value: Signal<T[]>
-	readonly spliceEvent: Signal<[start: number, added: T[], removed: T[]] | null>
+export default class WatchedArray<T> {
+	readonly value: Signal<readonly T[]>
 
-	constructor(iterable?: Iterable<T> | Signal<T[]> | null | undefined) {
-		super()
+	private array: T[]
+	private readonly hiddenSignal: Signal<T[]>
+	private readonly spliceListeners: ((startIndex: number, added: T[], removed: T[]) => void)[] = []
+	private readonly replaceListeners: ((oldArray: readonly T[], newArray: readonly T[]) => void)[] = []
 
-		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? Array.from(iterable as Iterable<T>) : [], true)
+	constructor(iterable?: Iterable<T> | undefined) {
+		this.array = iterable ? Array.from(iterable) : []
+		this.hiddenSignal = createSignal(this.array, true)
 
-		this.value = toSignal(() => baseSignal(), (value: T[]) => {
-			if (value !== sample(baseSignal)) {
-				// used in @dynein/dom addFor to detect an overwrite of the entire array. addFor can'
-				// just listen on array.value() because that gets fired for every .splice
-
-				// Update this before firing spliceEvent because the handlers in addFor will need
-				// to read the updated array value
-				baseSignal(value)
-
-				this.spliceEvent(null)
-			} else {
-				baseSignal(value)
+		this.value = toSignal(this.hiddenSignal, (newValue: T[]) => {
+			if (newValue === this.array) {
+				//@ts-ignore
+				console.warn("Assigning the same array to WatchedArray.value has no effect.")
+				return
 			}
-		})
 
-		this.spliceEvent = createSignal<[startIndex: number, added: T[], removed: T[]] | null>(null, true)
+			// This avoids confusing behavior caused by passing a WatchedArray to .value
+			if (!Array.isArray(newValue)) {
+				//@ts-ignore
+				console.warn("Converting new value to native array.")
+				newValue = sample(() => Array.from(newValue))
+			}
+
+			_runAtBaseWithState(false, false, undefined, undefined, () => {
+				batch(() => {
+					for (let i = 0; i < this.replaceListeners.length; i++) {
+						this.replaceListeners[i](this.array, newValue)
+					}
+				})
+			})
+
+			this.array = newValue
+			this.hiddenSignal(newValue)
+		})
 	}
 
-	map<U>(fn: (value: T, index: number, array: T[]) => U): U[] {
+	onSplice(listener: ((startIndex: number, added: T[], removed: T[]) => void)) {
+		this.spliceListeners.push(listener)
+		onCleanup(() => {
+			const idx = this.spliceListeners.indexOf(listener)
+			if (idx === -1) {
+				//@ts-ignore
+				console.warn("Unexpected state: unable to remove onSplice listener")
+			}
+
+			this.spliceListeners.splice(idx, 1)
+		})
+	}
+
+	onReplace(listener: ((oldArray: readonly T[], newArray: readonly T[]) => void)) {
+		this.replaceListeners.push(listener)
+
+		onCleanup(() => {
+			const idx = this.replaceListeners.indexOf(listener)
+			if (idx === -1) {
+				//@ts-ignore
+				console.warn("Unexpected state: unable to remove onReplace listener")
+			}
+
+			this.replaceListeners.splice(idx, 1)
+		})
+	}
+
+	map<U>(fn: (value: T, index: number, array: readonly T[]) => U): U[] {
 		return this.value().map(fn)
 	}
 	slice(start?: number, end?: number): T[] {
@@ -81,9 +119,7 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 	splice(start: number, deleteCount?: number): T[]
 	splice(start: number, deleteCount: number, ...items: T[]): T[]
 	splice(arg1: any, arg2: any, ...items: T[]): T[] {
-		const currentArr = this.v
-		const len = currentArr.length
-
+		const len = this.array.length
 
 		let start = arg1
 		let remove = 0
@@ -122,38 +158,35 @@ export default class WatchedArray<T> extends WatchedValue<T[]> {
 		}
 
 		// TODO: do more testing about the most performant way to pass the arguments list down to the real .splice
-		const removed = currentArr.splice(start, remove, ...items)
+		const removed = this.array.splice(start, remove, ...items)
 
-		this.spliceEvent([start, items, removed])
+		_runAtBaseWithState(false, false, undefined, undefined, () => {
+			batch(() => {
+				for (let i = 0; i < this.spliceListeners.length; i++) {
+					this.spliceListeners[i](start, items, removed)
+				}
+			})
+		})
 
-		this.fire()
+		this.hiddenSignal(this.array) // trigger everything listening on value()
+
 		return removed
 	}
 
-	// wrapper around .spliceEvent to give the added and removed items.
-	onSplice(listener: (...args: ([start: number, added: T[], removed: T[]] | [undefined, undefined, undefined])) => void) {
-		onWrite(this.spliceEvent, (evt) => {
-			if (!evt) {
-				listener(undefined, undefined, undefined)
-				return
-			}
 
-			listener(evt[0], evt[1], evt[2])
-		})
-	}
 
 	push(...items: T[]) {
-		this.splice(this.v.length, 0, ...items)
-		return this.v.length
+		this.splice(this.array.length, 0, ...items)
+		return this.array.length
 	}
 
 	unshift(...items: T[]) {
 		this.splice(0, 0, ...items)
-		return this.v.length
+		return this.array.length
 	}
 
 	pop(): T | undefined {
-		const removed = this.splice(this.v.length - 1, 1)
+		const removed = this.splice(this.array.length - 1, 1)
 		return removed[0]
 	}
 

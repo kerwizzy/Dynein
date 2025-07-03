@@ -1,38 +1,92 @@
-import { Signal, sample, isSignal, createSignal, toSignal } from "./state.js"
-import WatchedValue from "./WatchedValue.js"
+import { Signal, sample, createSignal, toSignal, _runAtBaseWithState, batch, onCleanup } from "./state.js"
 
-export default class WatchedSet<T> extends WatchedValue<Set<T>> {
-	readonly value: Signal<Set<T>>
-	readonly editEvent: Signal<[key: T, value: T | undefined, add: boolean] | null> // event for *any* call. Not necessarily one that actually changes the map.
+export default class WatchedSet<T> {
+	readonly value: Signal<ReadonlySet<T>>
 
-	constructor(iterable?: Iterable<T> | null | undefined | Signal<Set<T>>) {
-		super()
+	private hiddenValue: Set<T>
+	private readonly hiddenSignal: Signal<Set<T>>
+	private readonly editListeners: ((value: T, add: boolean) => void)[] = []
+	private readonly replaceListeners: ((oldSet: ReadonlySet<T>, newSet: ReadonlySet<T> | null) => void)[] = []
 
-		const baseSignal = isSignal(iterable) ? iterable : createSignal(iterable ? new Set(iterable as Iterable<T>) : new Set(), true) as Signal<Set<T>>
+	constructor(iterable?: Iterable<T> | undefined) {
+		this.hiddenValue = iterable ? new Set(iterable) : new Set()
+		this.hiddenSignal = createSignal(this.hiddenValue, true)
 
-		this.editEvent = createSignal(null, true)
-
-		this.value = toSignal(() => baseSignal(), (value: Set<T>) => {
-			if (value !== sample(baseSignal)) {
-				// used in @dynein/dom addFor to detect an overwrite of the entire set. addFor can't just
-				// listen on set.value() because that gets fired for every .add and .delete
-
-				// Update this before firing spliceEvent because the handlers in addFor will need
-				// to read the updated set value
-				baseSignal(value)
-
-				this.editEvent(null)
-			} else {
-				baseSignal(value)
+		this.value = toSignal(this.hiddenSignal, (newValue: Set<T>) => {
+			if (newValue === this.hiddenValue) {
+				//@ts-ignore
+				console.warn("Assigning the same Set to WatchedSet.value has no effect.")
+				return
 			}
+
+			// This avoids confusing behavior caused by passing a WatchedSet to .value
+			if (!(newValue instanceof Set)) {
+				//@ts-ignore
+				console.warn("Converting new value to native Set.")
+				newValue = sample(() => new Set(newValue))
+			}
+
+			this.runReplaceListeners(newValue)
+
+			this.hiddenValue = newValue
+			this.hiddenSignal(newValue)
+		})
+	}
+
+	private runEditListeners(value: T, add: boolean) {
+		_runAtBaseWithState(false, false, undefined, undefined, () => {
+			batch(() => {
+				for (let i = 0; i < this.editListeners.length; i++) {
+					this.editListeners[i](value, add)
+				}
+			})
+		})
+	}
+
+	private runReplaceListeners(newValue: ReadonlySet<T> | null) {
+		_runAtBaseWithState(false, false, undefined, undefined, () => {
+			batch(() => {
+				for (let i = 0; i < this.replaceListeners.length; i++) {
+					this.replaceListeners[i](this.hiddenValue, newValue)
+				}
+			})
+		})
+	}
+
+	onEdit(listener: ((value: T, add: boolean) => void)) {
+		this.editListeners.push(listener)
+		onCleanup(() => {
+			const idx = this.editListeners.indexOf(listener)
+			if (idx === -1) {
+				//@ts-ignore
+				console.warn("Unexpected state: unable to remove onEdit listener")
+			}
+
+			this.editListeners.splice(idx, 1)
+		})
+	}
+
+	onReplace(listener: ((oldSet: ReadonlySet<T>, newSet: ReadonlySet<T> | null) => void)) {
+		this.replaceListeners.push(listener)
+
+		onCleanup(() => {
+			const idx = this.replaceListeners.indexOf(listener)
+			if (idx === -1) {
+				//@ts-ignore
+				console.warn("Unexpected state: unable to remove onReplace listener")
+			}
+
+			this.replaceListeners.splice(idx, 1)
 		})
 	}
 
 	add(value: T) {
-		this.v.add(value)
-		// TODO only fire on actual insertion
-		this.editEvent([value, value, true])
-		this.fire()
+		this.hiddenValue.add(value)
+
+		this.runEditListeners(value, true)
+
+		this.hiddenSignal(this.hiddenValue) // trigger everything listening on value()
+
 		return this
 	}
 
@@ -41,16 +95,25 @@ export default class WatchedSet<T> extends WatchedValue<Set<T>> {
 	}
 
 	delete(value: T) {
-		const out = this.v.delete(value)
-		this.editEvent([value, undefined, false])
-		this.fire()
-		return out
+		const wasChanged = this.hiddenValue.delete(value)
+
+		if (wasChanged) {
+			this.runEditListeners(value, false)
+
+			this.hiddenSignal(this.hiddenValue)
+		}
+
+		return wasChanged
 	}
 
 	clear() {
-		this.v.clear()
-		this.editEvent(null)
-		this.fire()
+		if (this.hiddenValue.size > 0) {
+			this.runReplaceListeners(null)
+
+			this.hiddenValue.clear()
+
+			this.hiddenSignal(this.hiddenValue)
+		}
 	}
 
 	entries() {
