@@ -535,11 +535,9 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 }
 
 export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal<T> {
-	const handler = new DependencyHandler(init)
-	const signal = toSignal(
-		() => handler.read(),
-		(val) => handler.write(val, fireWhenEqual)
-	)
+	const handler = new DependencyHandler(init, fireWhenEqual)
+	const signal = toSignal(handler.read.bind(handler), handler.write.bind(handler))
+
 	// the above makes GC of `handler` depend on GC of `signal`
 
 	// This makes GC of `signal` depends on GC of `handler`, so now
@@ -1036,13 +1034,15 @@ class Effect extends Owner {
 
 class DependencyHandler<T> {
 	value: T
-	drains: Set<Effect>
+	readonly drains: Set<Effect>
+	readonly fireWhenEqual: boolean
 
-	dependents: Set<any> = new Set() // for GC stuff
+	readonly dependents: Set<any> = new Set() // for GC stuff
 
-	constructor(value: T) {
+	constructor(value: T, fireWhenEqual: boolean) {
 		this.value = value
 		this.drains = new Set()
+		this.fireWhenEqual = fireWhenEqual
 	}
 
 	read(): T {
@@ -1055,17 +1055,26 @@ class DependencyHandler<T> {
 		return this.value
 	}
 
-	write(val: T, updateOnEqual: boolean) {
-		currentUpdateQueue.delayStart(() => {
-			const changedValue = this.value !== val
-			this.value = val
+	write(val: T) {
+		const shouldFire = this.fireWhenEqual || this.value !== val
+		this.value = val
+		if (shouldFire) {
+			// This is basically a copy of the code in UpdateQueue.delayStart, but it avoids creating
+			// a closure and calling that function. Writing to signals is obviously in the
+			// really really hot path, so we want to avoid unneeded function calls and closure creation.
+			const oldStartDelayed = currentUpdateQueue.startDelayed
+			currentUpdateQueue.startDelayed = true
 
-			if (updateOnEqual || changedValue) {
-				for (const drain of this.drains) {
-					drain.schedule()
-				}
+			// We don't need a try/catch here because there's nothing in .schedule that could throw.
+			// The only user-controlled code during a schedule is in onCleanup, and that's already
+			// wrapped inside a try/catch.
+			for (const drain of this.drains) {
+				drain.schedule()
 			}
-		})
+
+			currentUpdateQueue.startDelayed = oldStartDelayed
+			currentUpdateQueue.start()
+		}
 	}
 }
 
