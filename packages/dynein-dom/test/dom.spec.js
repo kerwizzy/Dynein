@@ -1,4 +1,4 @@
-import { createRoot, createSignal, toSignal, createEffect, batch, $s, Owner, runWithOwner, onCleanup, onUpdate, WatchedArray, WatchedSet, WatchedMap } from "@dynein/state"
+import { createRoot, createSignal, createEffect, batch, $s, onCleanup, onUpdate, WatchedArray, WatchedSet, WatchedMap } from "@dynein/state"
 import { addPortal, elements, addIf, addAsyncReplaceable, addAsync, addDynamic, addNode, addHTML, addText, addFor } from "@dynein/dom"
 
 function mount(inner) {
@@ -89,11 +89,6 @@ describe("@dynein/dom", () => {
 		} else {
 			sinon.restore()
 		}
-	})
-
-	beforeEach(function () {
-		sinon.spy(console, 'warn')
-		sinon.spy(console, 'error')
 	})
 
 	describe("elements", () => {
@@ -313,6 +308,8 @@ describe("@dynein/dom", () => {
 			})
 
 			it("warns when passing a signal to a non-evented attr", () => {
+				sinon.spy(console, "warn")
+
 				const signal = createSignal(0)
 				const document = mount(() => {
 					elements.div({ myattr: signal })
@@ -545,6 +542,8 @@ describe("@dynein/dom", () => {
 		})
 
 		it("does not track inner dependencies", () => {
+			sinon.spy(console, "error")
+
 			const signal = createSignal(1)
 			const document = mount(() => {
 				addIf(() => 1, () => {
