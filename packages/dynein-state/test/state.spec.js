@@ -3538,6 +3538,34 @@ describe("@dynein/state", () => {
 
 			assert.strictEqual(log.join("; "), `effect1 sig1 = 0; destroy; onCleanup1 start; onCleanup1 end; onCleanup2 start; onCleanup2 end; effect1 sig1 = 6; done`)
 		})
+
+		it("resets custom states", () => {
+			const log = []
+			const owner = new Owner(null)
+
+			let customState = 0
+			const restoreCustomState = () => {
+				const saved = customState
+				return () => {
+					customState = saved
+				}
+			}
+
+			addCustomStateStasher(restoreCustomState)
+
+			runWithOwner(owner, () => {
+				onCleanup(() => {
+					log.push("cleanup customState = " + customState)
+				})
+			})
+
+			log.push("set customState = 1")
+			customState = 1
+			log.push("destroy")
+			owner.destroy()
+
+			assert.strictEqual(log.join("; "), "set customState = 1; destroy; cleanup customState = 0")
+		})
 	})
 
 	describe("runWithOwner", () => {

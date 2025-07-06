@@ -172,9 +172,6 @@ export function _runAtBaseWithState<T>(
 	 * startDelayed            (preserve)
 	 * custom states           reset to base
 	 */
-
-	const saved_currentUpdateQueue = currentUpdateQueue
-	const saved_currentUpdateQueue_startDelayed = currentUpdateQueue.startDelayed
 	const restore = getRestoreAllStateFunction()
 	try {
 		restoreBaseState(false)
@@ -182,9 +179,6 @@ export function _runAtBaseWithState<T>(
 		collectingDependencies = new_collectingDependencies
 		currentOwner = new_currentOwner
 		currentEffect = new_currentEffect
-
-		currentUpdateQueue = saved_currentUpdateQueue
-		currentUpdateQueue.startDelayed = saved_currentUpdateQueue_startDelayed
 		return inner()
 	} finally {
 		restore()
@@ -358,15 +352,17 @@ export class Owner {
 		// want it to rerun `reset` with the same list, because that would cause an infinite loop
 		this.children = new Set()
 
-		batch(() => {
-			for (const child of children) {
-				if (child instanceof Owner) {
-					child.parent = null
-					child.destroy()
-				} else {
-					child()
+		_runAtBaseWithState(false, false, undefined, undefined, () => {
+			batch(() => {
+				for (const child of children) {
+					if (child instanceof Owner) {
+						child.parent = null
+						child.destroy()
+					} else {
+						child()
+					}
 				}
-			}
+			})
 		})
 	}
 }
@@ -687,6 +683,9 @@ export function createMuffled<T>(signal: Signal<T>): Signal<T> {
 
 export function onCleanup(fn: () => void) {
 	/** STATE CHANGES (relative to values at creation)
+	 *
+	 * (most of these are handled in Owner.reset)
+	 *
 	 * assertedStatic 	       false
 	 * collectingDependencies  false
 	 * currentOwner            undefined
@@ -709,7 +708,7 @@ export function onCleanup(fn: () => void) {
 		const old_contextValues = contextValues
 		try {
 			contextValues = savedContextValues
-			updateState(false, false, undefined, undefined, fn)
+			fn()
 		} catch (err) {
 			console.warn("Caught error in cleanup function:", err)
 		} finally {
@@ -1139,12 +1138,16 @@ function restoreBaseState(leavingSynchronousRegion = true) {
 	currentOwner = undefined
 	currentEffect = undefined
 	contextValues = new Map()
-	currentUpdateQueue = rootUpdateQueue
-	rootUpdateQueue.startDelayed = false
+
 	for (const fn of customRestoreBaseStateFunctions) {
 		fn()
 	}
-	rootUpdateQueue.start()
+
+	if (leavingSynchronousRegion) {
+		currentUpdateQueue = rootUpdateQueue
+		rootUpdateQueue.startDelayed = false
+		rootUpdateQueue.start()
+	}
 }
 
 export function stateStashPromise<T>(promise: Promise<T>): Promise<T> {
