@@ -717,7 +717,7 @@ export function onCleanup(fn: () => void) {
 	})
 }
 
-export function batch(fn: () => void) {
+export function batch<T>(fn: () => T): T {
 	/** STATE CHANGES
 	 * assertedStatic 	       (preserve)
 	 * collectingDependencies  (preserve)
@@ -728,7 +728,7 @@ export function batch(fn: () => void) {
 	 * startDelayed            true
 	 * custom states           (preserve)
 	 */
-	currentUpdateQueue.delayStart(fn)
+	return currentUpdateQueue.delayStart(fn)
 }
 
 export function subclock(fn: () => void) {
@@ -861,11 +861,11 @@ class UpdateQueue {
 		}
 	}
 
-	delayStart(fn: () => void) {
+	delayStart<T>(fn: () => T): T {
 		const oldStartDelayed = this.startDelayed
 		this.startDelayed = true
 		try {
-			fn()
+			return fn()
 		} finally {
 			this.startDelayed = oldStartDelayed
 			this.start()
