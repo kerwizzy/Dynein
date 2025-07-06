@@ -341,6 +341,14 @@ More specifically, if `muffled = createMuffled(signal)`:
 
 You will probably not need to use this function very often, but it can be useful when implementing other utility primitives. It's often included in code which automatically serializes a complicated reactive structure to flat representation such as a JSON string written to localStorage.
 
+### `D.isTracking`
+
+```ts
+function isTracking(): boolean
+```
+
+Returns whether accessing a signal right now will add it as a dependency of the enclosing effect (if there is one).
+
 ## Advanced State Functions
 
 ### `D.batch`

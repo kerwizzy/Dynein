@@ -1077,6 +1077,11 @@ class DependencyHandler<T> {
 	}
 }
 
+// Returns the value of the condition above inside DependencyHandler.read.
+export function isTracking() {
+	return collectingDependencies && currentEffect && !assertedStatic && !currentEffect.destroyPending
+}
+
 const rootUpdateQueue = currentUpdateQueue
 
 type StateStasher = () => (() => void)
