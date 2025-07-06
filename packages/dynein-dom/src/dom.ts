@@ -347,26 +347,25 @@ export function mountBody(inner: () => void) {
 
 export function addAsyncReplaceable(
 	setupReplacements: (
-		replaceInner: <T>(inner: () => T) => T,
-		dependent: (inner: () => void) => void
+		replaceInner: <T>(inner: () => T) => T
 	) => void
 ) {
 	replacementArea(
 		addNode(document.createComment("<async>")),
 		addNode(document.createComment("</async>")),
 		($r) => {
-			const saved = getOwner()
-			const owner = new Owner()
+			const replaceInnerOwner = new Owner()
 			setInsertionState(null, null, () => {
-				setupReplacements((inner) => {
-					owner.reset()
-					return runWithOwner(owner, () => {
-						return assertStatic(() => {
-							return $r(inner)
+				_updateState(true, false, getOwner(), undefined, () => {
+					setupReplacements((inner) => {
+						replaceInnerOwner.reset()
+
+						return _updateState(true, false, replaceInnerOwner, undefined, () => {
+							return batch(() => {
+								return $r(inner)
+							})
 						})
 					})
-				}, (inner: () => void) => {
-					runWithOwner(saved, inner)
 				})
 			})
 		}

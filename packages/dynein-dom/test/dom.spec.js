@@ -1062,6 +1062,90 @@ describe("@dynein/dom", () => {
 				})
 			}, "not rendering")
 		})
+
+		it("does not track dependencies outside of $r", () => {
+			mount(() => {
+				const log = []
+				sinon.spy(console, "error")
+
+				const sig = createSignal(0)
+
+				addDynamic(() => {
+					log.push("in addDynamic")
+					addAsyncReplaceable(($r) => {
+						log.push("sig = " + sig())
+					})
+					log.push("after addAsyncReplaceable")
+				})
+
+				log.push("writing to sig")
+				sig(1)
+				log.push("end")
+
+				assert.strictEqual(log.join("; "), "in addDynamic; sig = 0; after addAsyncReplaceable; writing to sig; end")
+
+				assert.strictEqual(console.error.getCall(0).args[0], "Looks like you might have wanted to add a dependency but didn't.")
+			})
+		})
+
+		it("does not track dependencies inside of $r", () => {
+			mount(() => {
+				const log = []
+				sinon.spy(console, "error")
+
+				const sig = createSignal(0)
+				addDynamic(() => {
+					log.push("in addDynamic")
+					addAsyncReplaceable(($r) => {
+						$r(() => {
+							log.push("sig = " + sig())
+						})
+					})
+					log.push("after addAsyncReplaceable")
+				})
+
+				log.push("writing to sig")
+				sig(1)
+				log.push("end")
+
+				assert.strictEqual(log.join("; "), "in addDynamic; sig = 0; after addAsyncReplaceable; writing to sig; end")
+				assert.strictEqual(console.error.getCall(0).args[0], "Looks like you might have wanted to add a dependency but didn't.")
+			})
+		})
+
+		it("runs $r inside a batch", async () => {
+			const log = []
+
+			mount(() => {
+				const sig1 = createSignal("a")
+				const sig2 = createSignal("x")
+
+				createEffect(() => {
+					log.push(`sig1 = ${sig1()}`)
+				})
+
+				createEffect(() => {
+					log.push(`sig2 = ${sig2()}`)
+				})
+
+				addAsyncReplaceable(async ($r) => {
+					await sleep(1)
+
+					$r(() => {
+						log.push("$r start")
+						log.push("set sig1 = b")
+						sig1("b")
+						log.push("set sig2 = y")
+						sig2("y")
+						log.push("$r end")
+					})
+				})
+			})
+
+			await sleep(10)
+
+			assert.strictEqual(log.join("; "), "sig1 = a; sig2 = x; $r start; set sig1 = b; set sig2 = y; $r end; sig1 = b; sig2 = y")
+		})
 	})
 
 	describe("addFor", () => {
