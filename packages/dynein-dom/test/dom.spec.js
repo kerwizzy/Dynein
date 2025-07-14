@@ -1,4 +1,4 @@
-import { createRoot, createSignal, createEffect, batch, $s, onCleanup, onUpdate, WatchedArray, WatchedSet, WatchedMap } from "@dynein/state"
+import { createRoot, createSignal, createEffect, batch, $s, onCleanup, onUpdate, WatchedArray, WatchedSet, WatchedMap, createContext, runWithContext, useContext, sample } from "@dynein/state"
 import { addPortal, elements, addIf, addAsyncReplaceable, addAsync, addDynamic, addNode, addHTML, addText, addFor } from "@dynein/dom"
 
 function mount(inner) {
@@ -389,6 +389,24 @@ describe("@dynein/dom", () => {
 				}, "not rendering")
 			})
 		})
+
+		it("restores contexts", () => {
+			const log = []
+			const ctx = createContext("a")
+			const sig = createSignal(0)
+
+			mount(() => {
+				runWithContext(ctx, "b", () => {
+					addText(() => {
+						log.push(`sig = ${sig()}, ctx = ${useContext(ctx)}`)
+						return sig()
+					})
+				})
+			})
+
+			sig(1)
+			assert.strictEqual(log.join("; "), `sig = 0, ctx = b; sig = 1, ctx = b`)
+		})
 	})
 
 	describe("addHTML", () => {
@@ -681,6 +699,32 @@ describe("@dynein/dom", () => {
 			val(1)
 			assert.strictEqual(err, true)
 		})
+
+		it("restore contexts", () => {
+			const ctx = createContext("a")
+			const log = []
+			const sig = createSignal(0)
+
+			mount(() => {
+				runWithContext(ctx, "b", () => {
+					addIf(() => sig() === 0, () => {
+						log.push(`branch 0 sig = ${sample(sig)}, ctx = ${useContext(ctx)}`)
+					}).elseif(() => sig() === 1, () => {
+						log.push(`branch 1 sig = ${sample(sig)}, ctx = ${useContext(ctx)}`)
+					}).else(() => {
+						log.push(`branch 2 sig = ${sample(sig)}, ctx = ${useContext(ctx)}`)
+					})
+				})
+				log.push(`after ctx = ${useContext(ctx)}`)
+			})
+
+			log.push("set sig = 1")
+			sig(1)
+			log.push("set sig = 2")
+			sig(2)
+
+			assert.strictEqual(log.join("; "), "branch 0 sig = 0, ctx = b; after ctx = a; set sig = 1; branch 1 sig = 1, ctx = b; set sig = 2; branch 2 sig = 2, ctx = b")
+		})
 	})
 
 	describe("addDynamic", () => {
@@ -876,6 +920,25 @@ describe("@dynein/dom", () => {
 			await sleep(20)
 			assert.strictEqual(document.body.innerHTML.replace(/<\!--.*?-->/g, ""), ``)
 			assert.strictEqual(order, "run (show = true) before write signal cleanup run (show = false) ")
+		})
+
+		it("restore contexts", () => {
+			const ctx = createContext("a")
+			const log = []
+			const sig = createSignal(0)
+
+			mount(() => {
+				runWithContext(ctx, "b", () => {
+					addDynamic(() => {
+						log.push(`sig = ${sig()}, ctx = ${useContext(ctx)}`)
+					})
+				})
+				log.push(`after ctx = ${useContext(ctx)}`)
+			})
+
+			sig(1)
+
+			assert.strictEqual(log.join("; "), "sig = 0, ctx = b; after ctx = a; sig = 1, ctx = b")
 		})
 	})
 
@@ -1144,6 +1207,38 @@ describe("@dynein/dom", () => {
 			await sleep(10)
 
 			assert.strictEqual(log.join("; "), "sig1 = a; sig2 = x; $r start; set sig1 = b; set sig2 = y; $r end; sig1 = b; sig2 = y")
+		})
+
+		// This may change in the future. It's here as a note of current behavior.
+		it("does not restore contexts in $r", async () => {
+			const ctx = createContext("a")
+			const log = []
+
+			mount(() => {
+				runWithContext(ctx, "b", () => {
+					addAsyncReplaceable(async ($r) => {
+						log.push("1 = " + useContext(ctx))
+
+						$r(() => {
+							log.push("2 = " + useContext(ctx))
+						})
+
+						await sleep(1)
+
+						log.push("3 = " + useContext(ctx))
+
+						$r(() => {
+							log.push("4 = " + useContext(ctx))
+						})
+
+						log.push("5 = " + useContext(ctx))
+					})
+				})
+			})
+
+			await sleep(10)
+
+			assert.strictEqual(log.join("; "), "1 = b; 2 = b; 3 = a; 4 = a; 5 = a")
 		})
 	})
 
