@@ -1,4 +1,4 @@
-import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, createMuffled, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray, addCustomStateStasher, WatchedArray, WatchedSet, WatchedMap } from "../built/state.js"
+import { createSignal, toSignal, createEffect, saveAllState, $s, createMemo, createMuffled, onUpdate, onWrite, onCleanup, createRoot, untrack, sample, retrack, batch, assertStatic, subclock, _getInternalState, runWithOwner, Owner, getOwner, createContext, useContext, saveContexts, saveAllContexts, runWithContext, ReactiveArray, registerCustomStateStasher, WatchedArray, WatchedSet, WatchedMap } from "../built/state.js"
 
 process.on('unhandledRejection', (reason) => {
 	console.log("unhandled rejection", reason)
@@ -225,7 +225,7 @@ describe("@dynein/state", () => {
 				}
 			}
 
-			addCustomStateStasher(restoreCustomState)
+			registerCustomStateStasher(restoreCustomState)
 
 			customState = 1
 
@@ -1401,7 +1401,7 @@ describe("@dynein/state", () => {
 				}
 			}
 
-			addCustomStateStasher(restoreCustomState)
+			registerCustomStateStasher(restoreCustomState)
 
 			customState = 1
 
@@ -2171,7 +2171,7 @@ describe("@dynein/state", () => {
 				}
 			}
 
-			addCustomStateStasher(restoreCustomState)
+			registerCustomStateStasher(restoreCustomState)
 
 			customState = 1
 
@@ -2344,7 +2344,7 @@ describe("@dynein/state", () => {
 				}
 			}
 
-			addCustomStateStasher(restoreCustomState)
+			registerCustomStateStasher(restoreCustomState)
 
 			customState = 1
 
@@ -2988,7 +2988,7 @@ describe("@dynein/state", () => {
 				}
 			}
 
-			addCustomStateStasher(restoreCustomState)
+			registerCustomStateStasher(restoreCustomState)
 
 			customState = 1
 
@@ -3551,7 +3551,7 @@ describe("@dynein/state", () => {
 				}
 			}
 
-			addCustomStateStasher(restoreCustomState)
+			registerCustomStateStasher(restoreCustomState)
 
 			runWithOwner(owner, () => {
 				onCleanup(() => {
