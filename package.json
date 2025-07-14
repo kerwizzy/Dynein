@@ -14,7 +14,6 @@
   "workspaces": [
     "./packages/dynein-state",
     "./packages/dynein-dom",
-    "./packages/dynein-shared-signals",
     "./packages/dynein"
   ],
   "devDependencies": {
