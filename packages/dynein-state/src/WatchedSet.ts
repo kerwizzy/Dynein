@@ -5,8 +5,10 @@ export default class WatchedSet<T> {
 
 	private hiddenValue: Set<T>
 	private readonly hiddenSignal: Signal<Set<T>>
-	private readonly editListeners: ((value: T, add: boolean) => void)[] = []
-	private readonly replaceListeners: ((oldSet: ReadonlySet<T>, newSet: ReadonlySet<T> | null) => void)[] = []
+
+	// Use `any` instead of `T` to make typescript not complain in certain situations
+	private readonly editListeners: ((value: any, add: boolean) => void)[] = []
+	private readonly replaceListeners: ((oldSet: ReadonlySet<any>, newSet: ReadonlySet<any> | null) => void)[] = []
 
 	constructor(iterable?: Iterable<T> | undefined) {
 		this.hiddenValue = iterable ? new Set(iterable) : new Set()

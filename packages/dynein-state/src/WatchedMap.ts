@@ -5,8 +5,10 @@ export default class WatchedMap<K, V> {
 
 	private hiddenValue: Map<K, V>
 	private readonly hiddenSignal: Signal<Map<K, V>>
-	private readonly editListeners: ((key: K, value: V | undefined, setting: boolean) => void)[] = []
-	private readonly replaceListeners: ((oldMap: ReadonlyMap<K, V>, newMap: ReadonlyMap<K, V> | null) => void)[] = []
+
+	// Use `any` instead of `T` to make typescript not complain in certain situations
+	private readonly editListeners: ((key: any, value: any, setting: boolean) => void)[] = []
+	private readonly replaceListeners: ((oldMap: ReadonlyMap<any, any>, newMap: ReadonlyMap<any, any> | null) => void)[] = []
 
 	constructor(iterable?: Iterable<readonly [K, V]> | undefined) {
 		this.hiddenValue = iterable ? new Map(iterable) : new Map()

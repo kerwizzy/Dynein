@@ -5,8 +5,10 @@ export default class WatchedArray<T> {
 
 	private array: T[]
 	private readonly hiddenSignal: Signal<T[]>
-	private readonly spliceListeners: ((startIndex: number, added: T[], removed: T[]) => void)[] = []
-	private readonly replaceListeners: ((oldArray: readonly T[], newArray: readonly T[]) => void)[] = []
+
+	// Use `any` instead of `T` to make typescript not complain in certain situations
+	private readonly spliceListeners: ((startIndex: number, added: any[], removed: any[]) => void)[] = []
+	private readonly replaceListeners: ((oldArray: any[], newArray: any[]) => void)[] = []
 
 	constructor(iterable?: Iterable<T> | undefined) {
 		this.array = iterable ? Array.from(iterable) : []
