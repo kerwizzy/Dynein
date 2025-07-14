@@ -530,8 +530,8 @@ export function onWrite<T>(getter: ReadableSignal<T>, listener: (newValue: T) =>
 	})
 }
 
-export function createSignal<T>(init: T, fireWhenEqual: boolean = false): Signal<T> {
-	const handler = new DependencyHandler(init, fireWhenEqual)
+export function createSignal<T>(initialValue: T, fireWhenEqual: boolean = false): Signal<T> {
+	const handler = new DependencyHandler(initialValue, fireWhenEqual)
 	const signal = toSignal(handler.read.bind(handler), handler.write.bind(handler))
 
 	// the above makes GC of `handler` depend on GC of `signal`
