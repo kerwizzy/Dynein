@@ -12,7 +12,7 @@ export type EventsMap<TagMap extends Record<string, any>, ElName extends string>
 export type AttrsAndEventsMap<TagMap extends Record<string, any>, ElName extends string> = Record<
 	string,
 	Primitive | ((...args: any[]) => any)
-> & (Partial<EventsMap<TagMap, ElName>> & { style?: any })
+> & (Partial<EventsMap<TagMap, ElName>>)
 
 const updateEventTable: Record<string, string> = {
 	value: "input",
