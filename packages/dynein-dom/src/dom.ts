@@ -44,7 +44,7 @@ function replacementArea(start: Node, end: Node, setupReplacements: (replaceInne
 		}
 
 		isFirst = false
-		return setInsertionState(parentNode, end, () => {
+		return runWithInsertionState(parentNode, end, () => {
 			return assertStatic(inner)
 		})
 	})
@@ -95,11 +95,11 @@ export function addNode<T extends Node>(node: T): T {
 	return node
 }
 
-export function setInsertionState<T>(
+export function runWithInsertionState<T>(
 	parentNode: Node | null,
 	beforeNode: Node | null,
 	inner: () => T
-) {
+): T {
 	const old_insertTarget = insertTarget
 	const old_insertBeforeNode = insertBeforeNode
 	insertTarget = parentNode
@@ -200,7 +200,7 @@ function createAndInsertElement<
 	if (inner !== null) {
 		if (typeof inner === "function") {
 			//console.log(`<${tagName}>`)
-			setInsertionState(el, null, () => {
+			runWithInsertionState(el, null, () => {
 				inner(el)
 			})
 			//console.log(`</${tagName}>`)
@@ -291,7 +291,7 @@ export function addHTML(html: string): void {
 
 export function addText(val: Primitive | (() => Primitive)): Node {
 	const node = document.createTextNode("")
-	setInsertionState(null, null, () => {
+	runWithInsertionState(null, null, () => {
 		if (typeof val === "function") {
 			createEffect(() => {
 				node.textContent = stringify(val())
@@ -328,7 +328,7 @@ export function addPortal(parentNode: Node, beforeOrInner: Node | null | (() => 
 	})
 
 	assertStatic(() => {
-		setInsertionState(parentNode, endNode, inner)
+		runWithInsertionState(parentNode, endNode, inner)
 	})
 }
 
@@ -355,7 +355,7 @@ export function addAsyncReplaceable(
 		addNode(document.createComment("</async>")),
 		($r) => {
 			const replaceInnerOwner = new Owner()
-			setInsertionState(null, null, () => {
+			runWithInsertionState(null, null, () => {
 				_updateState(true, false, getOwner(), undefined, () => {
 					setupReplacements((inner) => {
 						replaceInnerOwner.reset()

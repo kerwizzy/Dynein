@@ -1,5 +1,5 @@
 import { assertStatic, createEffect, createSignal, Owner, getOwner, onCleanup, onUpdate, runWithOwner, sample, Signal, onWrite, WatchedSet, WatchedMap, WatchedArray } from "@dynein/state"
-import { addNode, setInsertionState } from "./dom.js"
+import { addNode, runWithInsertionState } from "./dom.js"
 
 const returnNaN = () => NaN
 
@@ -247,7 +247,7 @@ class ForListArea<T> {
 							newItemIndexSignals.push(itemIndexSignal)
 						}
 
-						setInsertionState(listParent, firstNodeAfterModifyRange, () => {
+						runWithInsertionState(listParent, firstNodeAfterModifyRange, () => {
 							runWithOwner(itemOwner, () => {
 								try {
 									this.render(bValue, itemIndexSignal)
@@ -469,7 +469,7 @@ class ForListArea<T> {
 			}
 
 			// if (DEBUG) console.log(`render item "${item}"`)
-			setInsertionState(listParent, firstNodeAfterModifyRange, () => {
+			runWithInsertionState(listParent, firstNodeAfterModifyRange, () => {
 				runWithOwner(itemOwner, () => {
 					try {
 						this.render(item, itemIndexSignal)
