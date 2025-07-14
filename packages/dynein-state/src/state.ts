@@ -1088,7 +1088,7 @@ type StateStasher = () => (() => void)
 const customStateStashers: StateStasher[] = []
 const customRestoreBaseStateFunctions: (() => void)[] = []
 
-export function addCustomStateStasher(stateStasher: StateStasher) {
+export function registerCustomStateStasher(stateStasher: StateStasher) {
 	customStateStashers.push(stateStasher)
 	customRestoreBaseStateFunctions.push(stateStasher())
 }

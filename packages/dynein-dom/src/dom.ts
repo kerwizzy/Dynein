@@ -1,4 +1,4 @@
-import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, addCustomStateStasher, _updateState, Signal } from "@dynein/state"
+import { toSignal, onCleanup, assertStatic, createEffect, Owner, batch, untrack, isSignal, sample, retrack, getOwner, runWithOwner, createSignal, registerCustomStateStasher, _updateState, Signal } from "@dynein/state"
 
 type Primitive = string | number | boolean | undefined | null
 
@@ -72,7 +72,7 @@ type ElementTagNameMapForNamespace = {
 let insertTarget: Node | null = null
 let insertBeforeNode: Node | null = null
 
-addCustomStateStasher(() => {
+registerCustomStateStasher(() => {
 	const old_insertTarget = insertTarget
 	const old_insertBeforeNode = insertBeforeNode
 
